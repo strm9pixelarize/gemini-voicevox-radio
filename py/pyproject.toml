@@ -1,0 +1,14 @@
+[project]
+name = "neruru-radio-py"
+version = "0.1.0"
+description = "Python port of gemini-voicevox-radio (schedule-driven fork)"
+license = { text = "GPL-3.0-or-later" }
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,122 @@
+# schedule.yaml — 番組表の唯一の「正」
+# version: 3 / updated: 2026-11-17 00:56 JST (再生成版)
+# 生成スケジューラ・AzuraCast放送・Podcast化はすべてこの定義から決める。
+# テーマ・話者は未決定のため仮置き。
+# ステーションは id=8「ねるるの日常(健全版)」に決定 (2026-11-17 優)。
+# 全番組・全スポット共通の導入先で、元々そのためのステーション。
+#
+# この版に含まれる決定事項:
+# - 長編: 毎日 12 / 15 / 18 / 21 時、各 30〜45分
+# - 情報: 毎時 :15 = 交通情報、:45 = 天気情報、各 約3分 (180秒)
+# - 情報は AzuraCast のスケジュール機能で長編の途中にも強制割り込みする
+# - 長編の原稿に天気・渋滞を混ぜない (情報は独立スポットに分離)
+
+version: 3
+timezone: Asia/Tokyo
+
+# ============================================================
+# レーン1: 長編番組 (毎日 12 / 15 / 18 / 21 時、各 30〜45分)
+# 天気・渋滞はプロンプトに混ぜない (情報レーンに分離済み)
+# ============================================================
+programs:
+  - id: long-1200
+    title: "12時の長編 (仮)"
+    schedule: { days: [mon, tue, wed, thu, fri, sat, sun], time: "12:00" }
+    generate_before_minutes: 180       # 合成時間を要するため早めに先行生成 (要実測)
+    duration_target_sec: [1800, 2700]  # 30〜45分。atempo の上限もこの枠に合わせる
+    script:
+      mode: segmented                  # 30〜45分 = 原稿 約12,000〜16,000字想定。
+      segments: 3                      # 1回のLLM出力上限に収めるため幕ごとに分割生成して連結
+    prompt: prompts/long-1200.txt      # 天気・渋滞コンテキストは注入しない
+    speakers: []                       # 未決定
+    llm: Muse
+    azuracast: { station: 8, playlist: "long-1200" }
+    podcast: "<未決定>"                # スロット別フィードにするか選抜か
+
+  - id: long-1500
+    title: "15時の長編 (仮)"
+    schedule: { days: [mon, tue, wed, thu, fri, sat, sun], time: "15:00" }
+    generate_before_minutes: 180
+    duration_target_sec: [1800, 2700]
+    script: { mode: segmented, segments: 3 }
+    prompt: prompts/long-1500.txt
+    speakers: []
+    llm: Muse
+    azuracast: { station: 8, playlist: "long-1500" }
+    podcast: "<未決定>"
+
+  - id: long-1800
+    title: "18時の長編 (仮)"
+    schedule: { days: [mon, tue, wed, thu, fri, sat, sun], time: "18:00" }
+    generate_before_minutes: 180
+    duration_target_sec: [1800, 2700]
+    script: { mode: segmented, segments: 3 }
+    prompt: prompts/long-1800.txt
+    speakers: []
+    llm: Muse
+    azuracast: { station: 8, playlist: "long-1800" }
+    podcast: "<未決定>"
+
+  - id: long-2100
+    title: "21時の長編 (仮)"
+    schedule: { days: [mon, tue, wed, thu, fri, sat, sun], time: "21:00" }
+    generate_before_minutes: 180
+    duration_target_sec: [1800, 2700]
+    script: { mode: segmented, segments: 3 }
+    prompt: prompts/long-2100.txt
+    speakers: []
+    llm: Muse
+    azuracast: { station: 8, playlist: "long-2100" }
+    podcast: "<未決定>"
+
+# ============================================================
+# レーン2: 情報スポット (毎時 :15 = 交通 / :45 = 天気、各 約3分)
+# 長編とは別生成・別ファイル・別プレイリスト。
+# AzuraCast のスケジュール機能で長編の途中にも強制割り込みする (決定済み)。
+# 唐突にならないよう、入り/出のジングルで枠を明示する。
+# ============================================================
+info_spots:
+  - id: traffic
+    kind: traffic                      # JARTIC
+    title: "交通情報"
+    schedule: { minute: 15 }           # 毎時15分
+    active_hours: "<未決定>"           # 24時間か、放送時間帯のみか
+    generate_before_minutes: 5         # 情報は鮮度が命。直前に最新データで生成
+    duration_target_sec: 180           # 約3分想定 (2026-11-17 決定)
+    script:
+      mode: template                   # 定型フォーマットに最新データを差し込む。
+                                       # LLM の創作を入れない = 唐突感とコストを両方消す
+      fit_rule: trim_items             # 3分に収める方法は atempo の速度上げではなく
+                                       # 項目数の削減を優先 (読み上げの聞き取りやすさ優先)
+    jingle: { in: true, out: true }    # 「ここで交通情報です」を枠として明示
+    speakers: []                       # 未決定 (元は雨晴はうが交通担当)
+    output: rotating                   # traffic_latest.mp3 を上書きし続ける (アーカイブしない)
+    azuracast: { station: 8, playlist: "traffic-spot", interrupt: true }
+    podcast: false                     # 鮮度が切れる情報は Podcast に載せない
+    during_long_programs: interrupt    # AzuraCast スケジュールで強制割り込み (決定済み)
+
+  - id: weather
+    kind: weather                      # 気象庁
+    title: "天気情報"
+    schedule: { minute: 45 }           # 毎時45分
+    active_hours: "<未決定>"
+    generate_before_minutes: 5
+    duration_target_sec: 180           # 約3分想定 (2026-11-17 決定)
+    script:
+      mode: template
+      fit_rule: trim_items             # 項目数の削減で尺を合わせる (atempo 優先にしない)
+    jingle: { in: true, out: true }    # 「ここでお天気です」を枠として明示
+    speakers: []                       # 未決定 (元は雨晴はうが天気担当)
+    output: rotating                   # weather_latest.mp3 を上書きし続ける
+    azuracast: { station: 8, playlist: "weather-spot", interrupt: true }
+    podcast: false
+    during_long_programs: interrupt    # ただし長編が45分尺だと終了時刻と重なる点に注意 (PLAN参照)
+
+# ============================================================
+# 生成キューの原則
+# ============================================================
+# - ジョブは直列実行 (VOICEVOX 合成が CPU を使うため並列にしない)
+# - 締切が近い情報スポットを優先し、長編は3時間の先行枠の中で空き時間に作る
+# - 対象回のファイルが既にあればスキップ (冪等)
+# - AzuraCast の割り込みは割り込まれたトラックがスポット後に途中再開する挙動。
+#   1回の割り込みでタイムラインが約3分ずれる (同居人環境で挙動確認済み)

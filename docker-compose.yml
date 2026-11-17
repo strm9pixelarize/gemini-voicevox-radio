@@ -1,0 +1,19 @@
+# AI ラジオ生成系 (Portainer Stack: Git リポジトリから登録する)
+# スケジューラが毎時 :10 交通 / :40 天気を生成し、ホストの output/ に
+# 置く。output/ は AzuraCast へ bind mount 済み (nerurus_room_rest)。
+services:
+  radio-scheduler:
+    build: .
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Tokyo
+      VOICEVOX_HOST: http://voicevox.enoki.local
+      SPOT_OUT_DIR: /data/output
+      SPOT_ASSETS_DIR: /data/assets
+      SPOT_STATE_FILE: /data/state/scheduler_state.json
+    extra_hosts:
+      - "voicevox.enoki.local:192.168.104.3"
+    volumes:
+      - /DATA/AppData/azuracast_program/output:/data/output
+      - /DATA/AppData/azuracast_program/assets:/data/assets:ro
+      - /DATA/AppData/azuracast_program/state:/data/state
