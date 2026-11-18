@@ -11,6 +11,14 @@ services:
       SPOT_OUT_DIR: /data/output
       SPOT_ASSETS_DIR: /data/assets
       SPOT_STATE_FILE: /data/state/scheduler_state.json
+      # 長編の自動生成（12/15/18/21時の10分前に生成開始）
+      PROGRAM_OUT_DIR: /data/output
+      PROGRAM_STATE_FILE: /data/state/program_state.json
+      PROGRAM_WORK_DIR: /data/state/program_work
+      PROGRAM_TOPICS: /data/state/program_topics.json
+      # Anthropic API キー。Portainer の Stack 環境変数で入れること
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      RADIO_MODEL: claude-haiku-5-5
     extra_hosts:
       - "voicevox.enoki.local:192.168.104.3"
     volumes:

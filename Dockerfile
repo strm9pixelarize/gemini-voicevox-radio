@@ -7,5 +7,6 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY py/ /app/py/
+COPY prompts/ /app/prompts/
 
 CMD ["python", "/app/py/tools/run_scheduler.py"]

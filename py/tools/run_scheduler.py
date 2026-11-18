@@ -22,6 +22,8 @@ from pathlib import Path
 
 PY_DIR = Path(__file__).resolve().parent.parent  # py/
 JOBS = [(10, "traffic"), (40, "weather")]  # (生成する分, 種別) 放送の5分前
+# 長編: (生成する時, 分, 放送枠) 放送の10分前に生成開始
+PROGRAM_JOBS = [(11, 50, "12"), (14, 50, "15"), (17, 50, "18"), (20, 50, "21")]
 KEEP_DONE = 100  # state に残す直近の実行キー数
 
 
@@ -79,6 +81,26 @@ def main() -> int:
             if run_job(kind, out_dir, assets_dir):
                 state["done"] = (state["done"] + [key])[-KEEP_DONE:]
                 save_state(state_file, state)
+        for hour, minute, slot in PROGRAM_JOBS:
+            if (now.hour, now.minute) != (hour, minute):
+                continue
+            key = f"{now:%Y-%m-%d}:program-{slot}"
+            if key in state["done"]:
+                continue
+            cmd = [sys.executable, "tools/run_program_job.py", "--slot", slot]
+            log(f"generate program {slot}: {' '.join(cmd)}")
+            proc = subprocess.run(cmd, cwd=PY_DIR, capture_output=True,
+                                  text=True)
+            if proc.stdout:
+                print(proc.stdout[-3000:], flush=True)
+            if proc.returncode == 0:
+                state["done"] = (state["done"] + [key])[-KEEP_DONE:]
+                save_state(state_file, state)
+                log(f"done program {slot}")
+            else:
+                log(f"FAILED program {slot} (rc={proc.returncode})")
+                if proc.stderr:
+                    print(proc.stderr[-2000:], flush=True)
         time.sleep(20)
 
 
