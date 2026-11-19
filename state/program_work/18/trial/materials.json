@@ -1,0 +1,102 @@
+{
+ "topics": [
+  "ドローンと空撮の入門、機体と規制の基本",
+  "スマートホーム入門、センサーと家電の連携",
+  "フィルムカメラと中古レンズの沼"
+ ],
+ "article_title": "アズラキャストのワーカーがファタルになる件、原因は読み取り専用に作れないフォルダだった",
+ "article_published": "2026-11-19",
+ "broadcast_date": "2026-11-19",
+ "readings": [
+  {
+   "term": "ジーピーエス",
+   "kana": "ジーピーエス",
+   "full": "Global Positioning System"
+  },
+  {
+   "term": "ジーエヌエスエス",
+   "kana": "ジーエヌエスエス",
+   "full": "Global Navigation Satellite System"
+  },
+  {
+   "term": "ドローン",
+   "kana": "ドローン",
+   "full": ""
+  },
+  {
+   "term": "プロポ",
+   "kana": "プロポ",
+   "full": ""
+  },
+  {
+   "term": "ワイファイ",
+   "kana": "ワイファイ",
+   "full": ""
+  },
+  {
+   "term": "ブルートゥース",
+   "kana": "ブルートゥース",
+   "full": ""
+  },
+  {
+   "term": "ジグビー",
+   "kana": "ジグビー",
+   "full": ""
+  },
+  {
+   "term": "Matter",
+   "kana": "マター",
+   "full": ""
+  },
+  {
+   "term": "アイエスオー",
+   "kana": "アイエスオー",
+   "full": "International Organization for Standardization"
+  },
+  {
+   "term": "アズラキャスト",
+   "kana": "アズラキャスト",
+   "full": ""
+  },
+  {
+   "term": "ファタル",
+   "kana": "ファタル",
+   "full": ""
+  },
+  {
+   "term": "ランニング",
+   "kana": "ランニング",
+   "full": ""
+  },
+  {
+   "term": "ナス",
+   "kana": "ナス",
+   "full": ""
+  },
+  {
+   "term": "アールオー",
+   "kana": "アールオー",
+   "full": ""
+  },
+  {
+   "term": "スロー",
+   "kana": "スロー",
+   "full": ""
+  },
+  {
+   "term": "プロセスカバーアートメッセージ",
+   "kana": "プロセスカバーアートメッセージ",
+   "full": ""
+  },
+  {
+   "term": "php-worker-スロー",
+   "kana": "ピーエイチピーワーカースロー",
+   "full": ""
+  }
+ ],
+ "topic_starts": [
+  37,
+  109,
+  185
+ ]
+}

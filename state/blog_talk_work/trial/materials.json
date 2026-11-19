@@ -1,0 +1,59 @@
+{
+ "summary": "ねるるが、nekoOSのサイトを自鯖のDockerにデプロイしようとしたところ、設定ファイルの問題を疑ったが、実際はDockerの定義済みアドレスプールからサブネットを使い切ってしまい、nekoos_site_defaultというネットワークを作成できないことが原因だった。稼働中のコンテナを巻き込まないよう、docker system pruneは使わず、ネットワークのみを対象に空きを作る方針を立てた。prune で空きが作れない場合は、/etc/docker/daemon.json に default-address-pools を追加してDockerを再起動する次善策を考えている。サイト側の準備は整っており、土台が空き次第載せられる状態。",
+ "mountains": [
+  {
+   "title": "デプロイ失敗の原因は設定ファイルではなかった",
+   "detail": "nekoOSのサイト（Stack名 nekoos_site）用に、本家サイトのnginx.confからSSIとTelemetry系を除いた改修版を用意し、ポートは本家3100、ブログ3101、Umami予定の3102という並びで配置していた。デプロイしたところ弾かれ、最初は設定ファイルの問題だと考えて見直した。しかし違っていた。Stackが増えるたびにDockerがネットワークを作り、定義済みアドレスプールからサブネットを切り出していく。その枯渇が今回の失敗の原因で、nekoos_site_defaultというネットワーク自体が作れていなかった。nginx.confは無関係だった。自鯖はStackが多いため、いつか来ると思っていた問題が来た、という経緯になる。"
+  },
+  {
+   "title": "稼働中コンテナを守りながら空きを作る方針",
+   "detail": "対処にあたり、稼働中のコンテナには触らない方針を取った。docker system prune系は画像やボリュームまで巻き込むため使わず、狙いはネットワークだけに絞った。prune で空きが作れなかった場合の次善策として、/etc/docker/daemon.json に default-address-pools を足してDockerを再起動する手を用意した。ただし全コンテナが一度再起動することになるため、タイミングを選ぶ必要があると整理している。"
+  },
+  {
+   "title": "枯渇は他のStackにも波及する地雷だった",
+   "detail": "この枯渇はnekoOSに限らず、新規ネットワークを作る他のStack全部の障害になる。そのため、サイトを載せる前に先に片付けておく価値のある地雷だった。サイト側の準備はできており、土台となるサブネットが空けばすぐに載せられる状態にある。"
+  }
+ ],
+ "readings": [
+  {
+   "term": "Docker",
+   "kana": "ドッカー"
+  },
+  {
+   "term": "Stack",
+   "kana": "スタック"
+  },
+  {
+   "term": "nginx",
+   "kana": "エンジンエックス"
+  },
+  {
+   "term": "SSI",
+   "kana": "エスエスアイ"
+  },
+  {
+   "term": "Telemetry",
+   "kana": "テレメトリー"
+  },
+  {
+   "term": "Umami",
+   "kana": "ウmami"
+  },
+  {
+   "term": "nekoOS",
+   "kana": "ネコオーエス"
+  },
+  {
+   "term": "prune",
+   "kana": "プルーン"
+  },
+  {
+   "term": "default-address-pools",
+   "kana": "デフォルトアドレスプールズ"
+  },
+  {
+   "term": "daemon.json",
+   "kana": "デーモンジェイソン"
+  }
+ ]
+}
