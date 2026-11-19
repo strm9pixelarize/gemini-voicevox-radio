@@ -435,46 +435,43 @@ def main() -> int:
             pickup_title = _pj["title_spoken"]
     except (ValueError, AttributeError):
         pass
+    # 固定文は gadget-common.md の「固定文」を正とする (ここに直書きしない)。
+    # チェッカーと同じパーサで読み、{挨拶} {時刻} {お題N} {記事タイトル}
+    # を実行時の値で差し替える。
+    import gadget_check as _gc
+    _fx_pairs = _gc.fixed_from_common(_gc.parse_common(
+        str(ROOT / "prompts/parts/gadget-common.md"))) or []
+    _fx_subs = {"挨拶": GREETING, "時刻": TIME, "記事タイトル": pickup_title}
+    _fx_subs.update({f"お題{i}": t
+                     for i, t in enumerate(topic_titles, start=1)})
+    _fx_by_sub: dict[str, list[str]] = {}
+    for _sub, _line in _fx_pairs:
+        for _k, _v in _fx_subs.items():
+            _line = _line.replace("{" + _k + "}", _v)
+        _fx_by_sub.setdefault(_sub, []).append(_line)
+
+    def _fx_one(name: str) -> str:
+        if name not in _fx_by_sub:
+            raise SystemExit(
+                f"gadget-common.md の固定文に「{name}」がありません")
+        return _fx_by_sub[name][0]
+
+    def _fx_many(name: str) -> list[str]:
+        if name not in _fx_by_sub:
+            raise SystemExit(
+                f"gadget-common.md の固定文に「{name}」がありません")
+        return _fx_by_sub[name]
+
     fixed = {
-        "greet": [
-            f"めたん: {GREETING}。四国めたんです。",
-            f"つむぎ: {GREETING}！ 春日部つむぎだよ。",
-            f"ずんだもん: {GREETING}なのだ。ずんだもんなのだ。",
-        ],
-        "time": f"めたん: 時刻は{TIME}になりました。",
-        "show": "めたん: 毎時45分はガジェットマニアのお時間です。",
-        "topics": (
-            f"めたん: 今日のお題は{topic_titles[0]}、{topic_titles[1]}、"
-            f"{topic_titles[2]}、そして今日のブログピックアップからは"
-            f"{pickup_title}について解説します！"),
-        "blog_intro": (
-            f"めたん: 続いては今日のブログピックアップですわ。"
-            f"エノキ電気ニュースから届いた、{pickup_title}という"
-            f"記事をご紹介します。"),
-        "blog_link": (
-            "めたん: ご紹介した記事は、ブログ、ドット、"
-            "アーキテクチュラル、エヌ、ドット、ネットで"
-            "ご覧いただけますので、是非見てみてください！"),
-        "credit": (
-            "めたん: 本日のガジェットマニアは、エノキ電気、"
-            "全日本ダークウェブ普及協会の提供でお送りしました。"),
-        "sponsors": [
-            "めたん: エノキ電気は「自由をデザインする」を"
-            "キャッチフレーズに、ボカロピー、エンジニア、スポット"
-            "配送を手がける個人事業で、リナックス"
-            "ディストリビューション「キャラメルオーエス」の"
-            "開発者です。",
-            "めたん: 全日本ダークウェブ普及協会は「オニオンで"
-            "ええやん！」をキャッチフレーズに、トーアで閲覧できる"
-            "日本語のオニオンサイトを流行らせ、ダークウェブを"
-            "もっとカジュアルに、個人のブログやホームページで"
-            "満たすことを目指している団体です。",
-        ],
-        "close": [
-            "ずんだもん: 次の45分も、ニッチな沼にご招待するのだ。",
-            "めたん: ガジェットマニアでした。お聴きいただき"
-            "ありがとうございました。",
-        ],
+        "greet": _fx_many("挨拶"),
+        "time": _fx_one("時刻"),
+        "show": _fx_one("番組名"),
+        "topics": _fx_one("お題紹介"),
+        "blog_intro": _fx_one("ブログ紹介"),
+        "blog_link": _fx_one("記事の案内"),
+        "credit": _fx_one("提供"),
+        "sponsors": _fx_many("スポンサー紹介"),
+        "close": _fx_many("締め"),
     }
 
     # --- 3. セクション生成 ---
