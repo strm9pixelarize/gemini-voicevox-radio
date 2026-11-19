@@ -14,6 +14,8 @@
   引っ込ませる（ダッキング）処理も最終段で行う。
   --intro / --outro を渡すと、本編の前後にジングルを連結する
   （連結した全体に loudnorm をかけるので音量の段差は出ない）。
+  頭と末尾には --pad-sec 秒（既定 2 秒）の無音を入れる
+  （AzuraCast 側のつなぎで頭・尻が切れないようにするため）。
 """
 from __future__ import annotations
 
@@ -108,7 +110,7 @@ def loudnorm_filter(target_i: float, measured: dict | None) -> str:
 def finalize(wav_bytes: bytes, mp3_path: Path, duration: float,
              bgm: Path | None, bgm_db: float, target_i: float,
              loudnorm_on: bool, intro: Path | None = None,
-             outro: Path | None = None) -> None:
+             outro: Path | None = None, pad_sec: float = 2.0) -> None:
     """最終段: BGM を敷き、ジングルを前後に付け、loudnorm で音量を揃える。"""
     if shutil.which("ffmpeg") is None:
         raise RuntimeError("ffmpeg not found")
@@ -116,6 +118,7 @@ def finalize(wav_bytes: bytes, mp3_path: Path, duration: float,
     tmp_mix = mp3_path.with_name(mp3_path.stem + ".mix.wav")
     tmp_full = mp3_path.with_name(mp3_path.stem + ".full.wav")
     tmp_norm = mp3_path.with_name(mp3_path.stem + ".norm.wav")
+    tmp_pad = mp3_path.with_name(mp3_path.stem + ".pad.wav")
     try:
         tmp_voice.write_bytes(wav_bytes)
         src = tmp_voice
@@ -175,10 +178,18 @@ def finalize(wav_bytes: bytes, mp3_path: Path, duration: float,
             src = tmp_norm
             src_i = measured["input_i"] if measured else "?"
             print(f"loudnorm: {src_i} LUFS -> target {target_i} LUFS")
+        if pad_sec > 0:
+            # 頭と末尾に無音を足す (loudnorm の後に足すので音量は不変)
+            ms = int(round(pad_sec * 1000))
+            _ffmpeg(["-i", str(src), "-af",
+                     f"adelay={ms}|{ms},apad=pad_dur={pad_sec}",
+                     str(tmp_pad)])
+            src = tmp_pad
+            print(f"pad: +{pad_sec:.1f}s head/tail silence")
         _ffmpeg(["-i", str(src), "-codec:a", "libmp3lame",
                  "-b:a", "128k", str(mp3_path)])
     finally:
-        for tmp in (tmp_voice, tmp_mix, tmp_full, tmp_norm):
+        for tmp in (tmp_voice, tmp_mix, tmp_full, tmp_norm, tmp_pad):
             tmp.unlink(missing_ok=True)
 
 
@@ -217,6 +228,8 @@ def main() -> None:
                     help="loudnorm をかけない")
     ap.add_argument("--intro", help="本編の前に付けるジングル (任意)")
     ap.add_argument("--outro", help="本編の後に付けるジングル (任意)")
+    ap.add_argument("--pad-sec", type=float, default=2.0,
+                    help="頭と末尾に入れる無音の秒数 (既定 2、0 で無効)")
     args = ap.parse_args()
 
     lines = []
@@ -254,7 +267,8 @@ def main() -> None:
     if outro is not None and not outro.exists():
         raise SystemExit(f"アウトロファイルがありません: {outro}")
     finalize(wav_bytes, out, duration, bgm, args.bgm_volume_db,
-             args.target_lufs, not args.no_loudnorm, intro, outro)
+             args.target_lufs, not args.no_loudnorm, intro, outro,
+             args.pad_sec)
     print(f"done: {out} ({out.stat().st_size} bytes, "
           f"audio {duration / 60:.1f} min, synth {time.perf_counter() - t0:.0f}s)")
 
