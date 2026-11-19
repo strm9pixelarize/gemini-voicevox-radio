@@ -198,10 +198,27 @@ def main() -> None:
     synth_cmd = [sys.executable, "tools/synthesize_program.py",
                  str(trial_dir / "gadget_program_fixed.txt"),
                  "--out", str(mp3)]
-    # BGM は assets/neruru_bgm に置かれた曲を使う (無ければ声のみ)
-    bgm = PY_DIR.parent / "assets" / "neruru_bgm" / "Evolving_Pads.mp3"
-    if bgm.exists():
-        synth_cmd += ["--bgm", str(bgm)]
+    # BGM は assets/neruru_bgm フォルダの曲をローテーションで使う
+    # (無ければ声のみ)。曲を増やすときはフォルダにファイルを足すだけ。
+    # コンテナでは assets は /data/assets にマウントされる (compose 参照)。
+    # PROGRAM_BGM_DIR でフォルダごと上書きもできる
+    bgm_dirs = [PY_DIR.parent / "assets" / "neruru_bgm",
+                Path("/data/assets/neruru_bgm")]
+    if os.environ.get("PROGRAM_BGM_DIR"):
+        bgm_dirs.insert(0, Path(os.environ["PROGRAM_BGM_DIR"]))
+    tracks: list[Path] = []
+    for bgm_dir in bgm_dirs:
+        if bgm_dir.is_dir():
+            tracks = sorted(
+                p for p in bgm_dir.iterdir()
+                if p.is_file() and p.suffix.lower() == ".mp3")
+            if tracks:
+                break
+    if tracks:
+        bgm_idx = int(state.get("bgm_index", 0)) % len(tracks)
+        synth_cmd += ["--bgm", str(tracks[bgm_idx])]
+        state["bgm_index"] = bgm_idx + 1
+        log(f"bgm: {tracks[bgm_idx].name} ({bgm_idx + 1}/{len(tracks)})")
     run(synth_cmd, PY_DIR)
 
     state["next_index"] = (idx + 3) % len(pool)
