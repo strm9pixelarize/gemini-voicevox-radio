@@ -1,4 +1,4 @@
-"""VOICEVOX Engine client (external server).
+"""VOICEVOX Engine client (external server, with fallback).
 
 Design decision (2026-11-17): synthesis is the ONLY part delegated to an
 external server. Scripts, scheduling, AzuraCast and the audio storage all
@@ -10,6 +10,24 @@ live on the user's own host; this module just calls the engine over HTTP.
   hundreds of audio_query/synthesis round trips, so per-line reconnects
   to a remote host would add up.
 - Timeouts are mandatory (see STRUCTURE.md #3).
+
+Fallback (added 2026-11-19, after the enoki server outage):
+- env VOICEVOX_HOST_FALLBACK names a second engine (the self-hosted CPU
+  engine on op3060m, http://192.168.108.200:50021). The external GPU
+  engine stays primary; the local CPU engine is the backup.
+- Before the first request of a process, the primary is probed with a
+  short timeout (PROBE_TIMEOUT). If it does not answer, the whole
+  process sticks to the fallback. Jobs are spawned per run by the
+  scheduler, so the next job automatically re-checks the primary and
+  returns to it once it is back - no state file, no manual switch.
+- If the primary dies mid-job, the failed request is retried once on
+  the fallback and the rest of the job stays there. Lines already
+  synthesized are kept (same speakers; engine version may differ
+  slightly, 0.25.x vs 0.26.x, which is inaudible in practice).
+- HTTP error responses (non-200) do NOT trigger failover: the engine
+  is alive, and switching would only mask a real error.
+- Engaging the fallback prints a "VOICEVOX FALLBACK" line so it shows
+  up in scheduler logs and in the Discord success/failure summaries.
 """
 from __future__ import annotations
 
@@ -21,16 +39,64 @@ import urllib.parse
 DEFAULT_HOST = "http://localhost:50021"
 CONNECT_TIMEOUT = 10
 SYNTH_TIMEOUT = 120  # synthesis of a long line can take a while
+PROBE_TIMEOUT = 5    # primary reachability check before the first request
 
 
 def host_from_env() -> str:
     return os.environ.get("VOICEVOX_HOST", DEFAULT_HOST).rstrip("/")
 
 
+def fallback_from_env() -> str | None:
+    value = os.environ.get("VOICEVOX_HOST_FALLBACK", "").strip().rstrip("/")
+    return value or None
+
+
 class VoiceVoxClient:
-    def __init__(self, host: str | None = None):
-        self.base = urllib.parse.urlparse(host or host_from_env())
+    def __init__(self, host: str | None = None,
+                 fallback: str | None = None):
+        primary = (host or host_from_env()).rstrip("/")
+        fb = fallback if fallback is not None else fallback_from_env()
+        self._hosts = [primary]
+        if fb and fb.rstrip("/") != primary:
+            self._hosts.append(fb.rstrip("/"))
+        self._host_idx = 0
+        self.base = urllib.parse.urlparse(self._hosts[0])
         self._conn: http.client.HTTPConnection | None = None
+        self._probed = False
+
+    @property
+    def using_fallback(self) -> bool:
+        return self._host_idx > 0
+
+    def _switch_to_fallback(self, reason: str) -> bool:
+        """Move to the fallback host. Returns False if none is left."""
+        if self._host_idx + 1 >= len(self._hosts):
+            return False
+        old = self._hosts[self._host_idx]
+        self._host_idx += 1
+        self.close()
+        self.base = urllib.parse.urlparse(self._hosts[self._host_idx])
+        print(f"VOICEVOX FALLBACK: {old} unreachable ({reason}); "
+              f"using {self._hosts[self._host_idx]}", flush=True)
+        return True
+
+    def _probe_primary(self) -> None:
+        """One short-timeout /version check, run before the first request."""
+        self._probed = True
+        if len(self._hosts) < 2:
+            return
+        conn = http.client.HTTPConnection(
+            self.base.hostname, self.base.port or 80, timeout=PROBE_TIMEOUT)
+        try:
+            conn.request("GET", "/version")
+            resp = conn.getresponse()
+            resp.read()
+            if resp.status != 200:
+                raise RuntimeError(f"HTTP {resp.status}")
+        except Exception as exc:
+            self._switch_to_fallback(f"probe: {exc}")
+        finally:
+            conn.close()
 
     def _connection(self) -> http.client.HTTPConnection:
         if self._conn is None:
@@ -41,7 +107,18 @@ class VoiceVoxClient:
 
     def _request(self, method: str, path: str, body: bytes | None = None,
                  content_type: str | None = None) -> bytes:
+        if not self._probed:
+            self._probe_primary()
         headers = {"Content-Type": content_type} if content_type else {}
+        while True:
+            try:
+                return self._request_once(method, path, body, headers)
+            except (http.client.HTTPException, ConnectionError, OSError) as exc:
+                if not self._switch_to_fallback(str(exc)):
+                    raise
+
+    def _request_once(self, method: str, path: str, body: bytes | None,
+                      headers: dict) -> bytes:
         for attempt in range(2):
             try:
                 conn = self._connection()

@@ -7,3 +7,5 @@ log.txt
 /logs/*
 
 state/*_work/
+
+bench_voicevox.py
