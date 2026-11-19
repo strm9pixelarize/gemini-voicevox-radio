@@ -5,3 +5,5 @@ env.php
 log.txt
 /talkHistory/*
 /logs/*
+
+state/*_work/
