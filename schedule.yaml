@@ -38,6 +38,8 @@ programs:
     generate_before_minutes: 10
     duration_target_sec: [1800, 2700]  # 30〜45分
     status: planned
+    generator: py/tools/run_blog_job.py
+    prompt: prompts/steps/blog-talk.md
     source: "自分のブログ記事。最新記事優先 + 過去記事プールからローテーション"
     speakers: []                       # 未決定
     llm: Muse
