@@ -91,7 +91,7 @@ def main() -> None:
                           encoding="utf-8")
     log(f"deep-dives used today: {len(state['used_deep'])}")
 
-    mp3 = out_dir / f"news_{args.slot}_latest.mp3"
+    mp3 = out_dir / f"news_latest.mp3"
     run([sys.executable, "tools/synthesize_program.py",
          str(trial_dir / "news_program.txt"),
          "--out", str(mp3)], PY_DIR)
