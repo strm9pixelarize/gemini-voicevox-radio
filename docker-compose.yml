@@ -28,6 +28,8 @@ services:
       RADIO_MODEL: claude-haiku-5-5
       # Discord 通知用 Webhook。Portainer の Stack 環境変数で入れること
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      # フォールバック用URL
+      VOICEVOX_HOST_FALLBACK: http://192.168.108.200:50021
     extra_hosts:
       - "voicevox.enoki.local:192.168.104.3"
     volumes:
