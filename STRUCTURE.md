@@ -33,6 +33,18 @@
    - 天気の東京/埼玉/千葉、交通の対象 URL (…/s/301/C01.json) が実行部に固定
    - Python 化: 地域定義をデータ (定数表/設定) に寄せる
 
+## 運用レイアウト (2026-11-19 決定)
+
+10. **コードはホストの clone を bind mount して動かす**
+    - 当初は Dockerfile でイメージに焼き込む方式だったが、ホストから
+      コードが見えず管理しにくい (優の指摘)。リポジトリを
+      /DATA/AppData/azuracast_program に clone し、py/ (ro) と
+      prompts/ (rw) をコンテナの /app へ重ねる方式に変更
+    - 副次効果: 読み辞書への自動追記 (prompts/parts/gadget-common.md)
+      が再デプロイで消えず、ホスト側に残るようになった
+    - 更新手順: コードは git pull + コンテナ restart、
+      compose/Dockerfile の変更時のみ Pull and redeploy
+
 ## Phase 2 以降で扱うもの
 
 6. **パイプラインの順序がファイル名の数字頼み**

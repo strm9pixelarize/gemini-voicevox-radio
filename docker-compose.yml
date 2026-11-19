@@ -1,6 +1,13 @@
 # AI ラジオ生成系 (Portainer Stack: Git リポジトリから登録する)
 # スケジューラが毎時 :10 交通 / :40 天気を生成し、ホストの output/ に
 # 置く。output/ は AzuraCast へ bind mount 済み (nerurus_room_rest)。
+#
+# コードの置き場所 (2026-11-19 変更): リポジトリをホストの
+# /DATA/AppData/azuracast_program に clone し、py/ と prompts/ を
+# コンテナへ bind mount して「ホストのファイルそのもの」を動かす。
+# VS Code で眺め・編集でき、辞書の自動追記もホスト側に残る。
+# コード更新の手順: ホストで git pull → コンテナを再起動 (restart)。
+# compose や Dockerfile の変更時だけ Pull and redeploy が必要。
 services:
   radio-scheduler:
     build: .
@@ -25,3 +32,6 @@ services:
       - /DATA/AppData/azuracast_program/output:/data/output
       - /DATA/AppData/azuracast_program/assets:/data/assets:ro
       - /DATA/AppData/azuracast_program/state:/data/state
+      # コードはホストの clone をそのまま使う (イメージ焼き込みより優先される)
+      - /DATA/AppData/azuracast_program/py:/app/py:ro
+      - /DATA/AppData/azuracast_program/prompts:/app/prompts
