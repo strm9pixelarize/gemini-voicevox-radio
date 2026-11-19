@@ -12,6 +12,8 @@
 - 最終段で loudnorm により音量を目標 LUFS に揃える（--no-loudnorm で無効）。
   --bgm を渡すと、BGM をループして下に敷き、声に合わせて自動で
   引っ込ませる（ダッキング）処理も最終段で行う。
+  --intro / --outro を渡すと、本編の前後にジングルを連結する
+  （連結した全体に loudnorm をかけるので音量の段差は出ない）。
 """
 from __future__ import annotations
 
@@ -105,12 +107,14 @@ def loudnorm_filter(target_i: float, measured: dict | None) -> str:
 
 def finalize(wav_bytes: bytes, mp3_path: Path, duration: float,
              bgm: Path | None, bgm_db: float, target_i: float,
-             loudnorm_on: bool) -> None:
-    """最終段: loudnorm で音量を揃え、あれば BGM をダッキングで敷く。"""
+             loudnorm_on: bool, intro: Path | None = None,
+             outro: Path | None = None) -> None:
+    """最終段: BGM を敷き、ジングルを前後に付け、loudnorm で音量を揃える。"""
     if shutil.which("ffmpeg") is None:
         raise RuntimeError("ffmpeg not found")
     tmp_voice = mp3_path.with_name(mp3_path.stem + ".voice.wav")
     tmp_mix = mp3_path.with_name(mp3_path.stem + ".mix.wav")
+    tmp_full = mp3_path.with_name(mp3_path.stem + ".full.wav")
     tmp_norm = mp3_path.with_name(mp3_path.stem + ".norm.wav")
     try:
         tmp_voice.write_bytes(wav_bytes)
@@ -136,6 +140,33 @@ def finalize(wav_bytes: bytes, mp3_path: Path, duration: float,
                      "-map", "[out]", str(tmp_mix)])
             src = tmp_mix
             print(f"bgm: {bgm.name} ({bgm_db:+.0f} dB, ducking on)")
+        if intro is not None or outro is not None:
+            # イントロ → 本編 → アウトロ の順に連結する。全パートを
+            # 48kHz ステレオへ揃えてから concat する
+            inputs: list[str] = []
+            parts: list[int] = []
+            if intro is not None:
+                inputs += ["-i", str(intro)]
+                parts.append(len(parts))
+            inputs += ["-i", str(src)]
+            parts.append(len(parts))
+            if outro is not None:
+                inputs += ["-i", str(outro)]
+                parts.append(len(parts))
+            fc = ";".join(
+                f"[{i}:a]aresample=48000,"
+                f"aformat=channel_layouts=stereo[p{j}]"
+                for j, i in enumerate(parts))
+            fc += ";" + "".join(f"[p{j}]" for j in range(len(parts)))
+            fc += f"concat=n={len(parts)}:v=0:a=1[out]"
+            _ffmpeg(inputs + ["-filter_complex", fc, "-map", "[out]",
+                              str(tmp_full)])
+            src = tmp_full
+            names = " + ".join(
+                ([intro.name] if intro is not None else [])
+                + ["本編"]
+                + ([outro.name] if outro is not None else []))
+            print(f"jingle: {names}")
         if loudnorm_on:
             measured = measure_loudnorm(src, target_i)
             _ffmpeg(["-i", str(src), "-af",
@@ -147,7 +178,7 @@ def finalize(wav_bytes: bytes, mp3_path: Path, duration: float,
         _ffmpeg(["-i", str(src), "-codec:a", "libmp3lame",
                  "-b:a", "128k", str(mp3_path)])
     finally:
-        for tmp in (tmp_voice, tmp_mix, tmp_norm):
+        for tmp in (tmp_voice, tmp_mix, tmp_full, tmp_norm):
             tmp.unlink(missing_ok=True)
 
 
@@ -184,6 +215,8 @@ def main() -> None:
                     help="loudnorm の目標ラウドネス (既定 -16 LUFS)")
     ap.add_argument("--no-loudnorm", action="store_true",
                     help="loudnorm をかけない")
+    ap.add_argument("--intro", help="本編の前に付けるジングル (任意)")
+    ap.add_argument("--outro", help="本編の後に付けるジングル (任意)")
     args = ap.parse_args()
 
     lines = []
@@ -214,8 +247,14 @@ def main() -> None:
     bgm = Path(args.bgm) if args.bgm else None
     if bgm is not None and not bgm.exists():
         raise SystemExit(f"BGM ファイルがありません: {bgm}")
+    intro = Path(args.intro) if args.intro else None
+    if intro is not None and not intro.exists():
+        raise SystemExit(f"イントロファイルがありません: {intro}")
+    outro = Path(args.outro) if args.outro else None
+    if outro is not None and not outro.exists():
+        raise SystemExit(f"アウトロファイルがありません: {outro}")
     finalize(wav_bytes, out, duration, bgm, args.bgm_volume_db,
-             args.target_lufs, not args.no_loudnorm)
+             args.target_lufs, not args.no_loudnorm, intro, outro)
     print(f"done: {out} ({out.stat().st_size} bytes, "
           f"audio {duration / 60:.1f} min, synth {time.perf_counter() - t0:.0f}s)")
 

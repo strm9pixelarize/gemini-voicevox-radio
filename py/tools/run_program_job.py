@@ -206,19 +206,27 @@ def main() -> None:
                 Path("/data/assets/neruru_bgm")]
     if os.environ.get("PROGRAM_BGM_DIR"):
         bgm_dirs.insert(0, Path(os.environ["PROGRAM_BGM_DIR"]))
+    bgm_base = next((d for d in bgm_dirs if d.is_dir()), None)
     tracks: list[Path] = []
-    for bgm_dir in bgm_dirs:
-        if bgm_dir.is_dir():
-            tracks = sorted(
-                p for p in bgm_dir.iterdir()
-                if p.is_file() and p.suffix.lower() == ".mp3")
-            if tracks:
-                break
+    if bgm_base is not None:
+        tracks = sorted(
+            p for p in bgm_base.iterdir()
+            if p.is_file() and p.suffix.lower() == ".mp3")
     if tracks:
         bgm_idx = int(state.get("bgm_index", 0)) % len(tracks)
         synth_cmd += ["--bgm", str(tracks[bgm_idx])]
         state["bgm_index"] = bgm_idx + 1
         log(f"bgm: {tracks[bgm_idx].name} ({bgm_idx + 1}/{len(tracks)})")
+    # イントロ/アウトロは番組フォルダ (gadget_mania/) にあれば付ける
+    if bgm_base is not None:
+        intro = bgm_base / "gadget_mania" / "intro.mp3"
+        if intro.exists():
+            synth_cmd += ["--intro", str(intro)]
+            log("intro: gadget_mania/intro.mp3")
+        outro = bgm_base / "gadget_mania" / "outro.mp3"
+        if outro.exists():
+            synth_cmd += ["--outro", str(outro)]
+            log("outro: gadget_mania/outro.mp3")
     run(synth_cmd, PY_DIR)
 
     state["next_index"] = (idx + 3) % len(pool)
