@@ -9,6 +9,8 @@
   SPOT_ASSETS_DIR ジングル置き場 (既定 /data/assets)
   SPOT_STATE_FILE 状態ファイル (既定 /data/state/scheduler_state.json)
   VOICEVOX_HOST   make_spot 側が読む (サブプロセスへそのまま継承)
+  DISCORD_WEBHOOK_URL 設定されていれば生成の開始・成功・失敗を
+                      Discord へ通知する (notify.py、スポットは失敗のみ)
 """
 from __future__ import annotations
 
@@ -19,6 +21,8 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+
+from notify import notify
 
 PY_DIR = Path(__file__).resolve().parent.parent  # py/
 JOBS = [(10, "traffic"), (40, "weather")]  # (生成する分, 種別) 放送の5分前
@@ -49,6 +53,12 @@ def save_state(path: Path, state: dict) -> None:
     path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
 
+def summarize(stdout: str, lines: int = 6) -> str:
+    """通知の本文用に、ジョブ出力の末尾の数行を抜き出す。"""
+    tail = [ln for ln in stdout.splitlines() if ln.strip()]
+    return "\n".join(tail[-lines:])[:1200]
+
+
 def run_job(kind: str, out_dir: Path, assets_dir: Path) -> bool:
     cmd = [
         sys.executable, "tools/make_spot.py", kind,
@@ -63,6 +73,9 @@ def run_job(kind: str, out_dir: Path, assets_dir: Path) -> bool:
         log(f"FAILED {kind} (rc={proc.returncode})")
         if proc.stderr:
             print(proc.stderr[-2000:], flush=True)
+        # スポットは毎時2本あるので、通知は失敗のときだけ
+        notify("error", f"❌ 生成失敗: スポット {kind}",
+               (proc.stderr or "")[-1000:])
         return False
     log(f"done {kind}")
     return True
@@ -95,6 +108,7 @@ def main() -> int:
                 continue
             cmd = [sys.executable, "tools/run_program_job.py", "--slot", slot]
             log(f"generate program {slot}: {' '.join(cmd)}")
+            notify("start", f"▶ 生成開始: ガジェットマニア {slot}時枠")
             proc = subprocess.run(cmd, cwd=PY_DIR, capture_output=True,
                                   text=True)
             if proc.stdout:
@@ -103,10 +117,14 @@ def main() -> int:
                 state["done"] = (state["done"] + [key])[-KEEP_DONE:]
                 save_state(state_file, state)
                 log(f"done program {slot}")
+                notify("success", f"✅ 生成完了: ガジェットマニア {slot}時枠",
+                       summarize(proc.stdout))
             else:
                 log(f"FAILED program {slot} (rc={proc.returncode})")
                 if proc.stderr:
                     print(proc.stderr[-2000:], flush=True)
+                notify("error", f"❌ 生成失敗: ガジェットマニア {slot}時枠",
+                       (proc.stderr or "")[-1000:])
         for hour, minute, slot in NEWS_JOBS:
             if (now.hour, now.minute) != (hour, minute):
                 continue
@@ -115,6 +133,7 @@ def main() -> int:
                 continue
             cmd = [sys.executable, "tools/run_news_job.py", "--slot", slot]
             log(f"generate news {slot}: {' '.join(cmd)}")
+            notify("start", f"▶ 生成開始: ネルラジニュース {slot}時枠")
             proc = subprocess.run(cmd, cwd=PY_DIR, capture_output=True,
                                   text=True)
             if proc.stdout:
@@ -123,10 +142,14 @@ def main() -> int:
                 state["done"] = (state["done"] + [key])[-KEEP_DONE:]
                 save_state(state_file, state)
                 log(f"done news {slot}")
+                notify("success", f"✅ 生成完了: ネルラジニュース {slot}時枠",
+                       summarize(proc.stdout))
             else:
                 log(f"FAILED news {slot} (rc={proc.returncode})")
                 if proc.stderr:
                     print(proc.stderr[-2000:], flush=True)
+                notify("error", f"❌ 生成失敗: ネルラジニュース {slot}時枠",
+                       (proc.stderr or "")[-1000:])
         for hour, minute, slot in BLOG_JOBS:
             if now.weekday() >= 5:
                 continue
@@ -137,6 +160,7 @@ def main() -> int:
                 continue
             cmd = [sys.executable, "tools/run_blog_job.py"]
             log(f"generate blog-talk {slot}: {' '.join(cmd)}")
+            notify("start", f"▶ 生成開始: ブログトーク {slot}時枠")
             proc = subprocess.run(cmd, cwd=PY_DIR, capture_output=True,
                                   text=True)
             if proc.stdout:
@@ -145,10 +169,14 @@ def main() -> int:
                 state["done"] = (state["done"] + [key])[-KEEP_DONE:]
                 save_state(state_file, state)
                 log(f"done blog-talk {slot}")
+                notify("success", f"✅ 生成完了: ブログトーク {slot}時枠",
+                       summarize(proc.stdout))
             else:
                 log(f"FAILED blog-talk {slot} (rc={proc.returncode})")
                 if proc.stderr:
                     print(proc.stderr[-2000:], flush=True)
+                notify("error", f"❌ 生成失敗: ブログトーク {slot}時枠",
+                       (proc.stderr or "")[-1000:])
         time.sleep(20)
 
 
