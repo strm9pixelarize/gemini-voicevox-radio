@@ -7,6 +7,8 @@
 #
 # この版に含まれる決定事項:
 # - 長編: 毎日 12 / 15 / 18 / 21 時、各 30〜45分
+# - ニュース: 毎日 10 / 11 / 13 / 14 / 16 / 17 / 19 / 20 / 22 時、各 約10分
+#   (2026-11-19 優: 長編の無い時間帯をお試しでニュース枠に割り当て)
 # - 情報: 毎時 :15 = 交通情報、:45 = 天気情報、各 約3分 (180秒)
 # - 情報は AzuraCast のスケジュール機能で長編の途中にも強制割り込みする
 # - 長編の原稿に天気・渋滞を混ぜない (情報は独立スポットに分離)
@@ -111,6 +113,27 @@ info_spots:
     azuracast: { station: 8, playlist: "weather-spot", interrupt: true }
     podcast: false
     during_long_programs: interrupt    # ただし長編が45分尺だと終了時刻と重なる点に注意 (PLAN参照)
+
+# ============================================================
+# レーン1b: ニュース番組「ネルラジニュース」(2026-11-19 追加)
+# 長編の無い時間帯を埋める約10分枠。NHK + ITmedia の RSS から
+# 見出しを取り、トップ記事の本文をスクレイピングして深堀りする。
+# 深堀りの話題は当日の使い回しを避け、枠ごとに新しいものを選ぶ。
+# ============================================================
+news:
+  - id: neruraji-news
+    title: "ネルラジニュース"
+    schedule: { days: [mon, tue, wed, thu, fri, sat, sun],
+                times: ["10:00", "11:00", "13:00", "14:00", "16:00",
+                        "17:00", "19:00", "20:00", "22:00"] }
+    generate_before_minutes: 10
+    duration_target_sec: 600           # 約10分 (原稿 2800〜3400字)
+    generator: py/tools/run_news_job.py
+    prompt: prompts/steps/news-program.md
+    sources: ["NHK RSS (cat0)", "ITmedia RSS (news_bursts)"]
+    output: "news_<slot>_latest.mp3"
+    azuracast: { station: 8 }
+    podcast: false                     # 鮮度が切れる情報は Podcast に載せない
 
 # ============================================================
 # 生成キューの原則

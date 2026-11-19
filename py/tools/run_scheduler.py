@@ -24,6 +24,10 @@ PY_DIR = Path(__file__).resolve().parent.parent  # py/
 JOBS = [(10, "traffic"), (40, "weather")]  # (生成する分, 種別) 放送の5分前
 # 長編: (生成する時, 分, 放送枠) 放送の10分前に生成開始
 PROGRAM_JOBS = [(11, 50, "12"), (14, 50, "15"), (17, 50, "18"), (20, 50, "21")]
+# ニュース: 長編の無い時間帯を埋める約10分枠 (放送の10分前に生成開始)
+NEWS_JOBS = [(9, 50, "10"), (10, 50, "11"), (12, 50, "13"), (13, 50, "14"),
+             (15, 50, "16"), (16, 50, "17"), (18, 50, "19"), (19, 50, "20"),
+             (21, 50, "22")]
 KEEP_DONE = 100  # state に残す直近の実行キー数
 
 
@@ -99,6 +103,26 @@ def main() -> int:
                 log(f"done program {slot}")
             else:
                 log(f"FAILED program {slot} (rc={proc.returncode})")
+                if proc.stderr:
+                    print(proc.stderr[-2000:], flush=True)
+        for hour, minute, slot in NEWS_JOBS:
+            if (now.hour, now.minute) != (hour, minute):
+                continue
+            key = f"{now:%Y-%m-%d}:news-{slot}"
+            if key in state["done"]:
+                continue
+            cmd = [sys.executable, "tools/run_news_job.py", "--slot", slot]
+            log(f"generate news {slot}: {' '.join(cmd)}")
+            proc = subprocess.run(cmd, cwd=PY_DIR, capture_output=True,
+                                  text=True)
+            if proc.stdout:
+                print(proc.stdout[-3000:], flush=True)
+            if proc.returncode == 0:
+                state["done"] = (state["done"] + [key])[-KEEP_DONE:]
+                save_state(state_file, state)
+                log(f"done news {slot}")
+            else:
+                log(f"FAILED news {slot} (rc={proc.returncode})")
                 if proc.stderr:
                     print(proc.stderr[-2000:], flush=True)
         time.sleep(20)
