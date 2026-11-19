@@ -1,74 +1,171 @@
 # schedule.yaml — 番組表の唯一の「正」
-# version: 3 / updated: 2026-11-17 00:56 JST (再生成版)
+# version: 4 / updated: 2026-11-19 JST
 # 生成スケジューラ・AzuraCast放送・Podcast化はすべてこの定義から決める。
-# テーマ・話者は未決定のため仮置き。
-# ステーションは id=8「ねるるの日常(健全版)」に決定 (2026-11-17 優)。
-# 全番組・全スポット共通の導入先で、元々そのためのステーション。
+# ステーションは id=11「ねるるの日常(健全版)」(旧 id=8 から移行済み)。
 #
 # この版に含まれる決定事項:
 # - 長編: 毎日 12 / 15 / 18 / 21 時、各 30〜45分
+# - 長編の曜日別編成を本格化し、全28枠の番組を確定 (2026-11-19 優)
+#   - 月〜木: 帯編成 (12 ブログトーク / 15 ガジェットマニア /
+#             18 自鯖のある生活 / 21 ねるるの日常)
+#   - 金: 12 ブログトーク / 15 ガジェットマニア /
+#         18 土曜日、日曜日に行きたい！関東の魅力再発見！ / 21 朗読
+#   - 土: 12 関東お出かけガイド / 15 ガジェットマニア (週末版) /
+#         18 自鯖のある生活 (休日メンテ編) / 21 ねるるの日常 (週末版)
+#   - 日: 12 お昼、何食べる？ / 15 ガジェットマニア /
+#         18 いま、このインディーズバンドが熱い！！！ / 21 ねるるの眠れない話
 # - ニュース: 毎日 10 / 11 / 13 / 14 / 16 / 17 / 19 / 20 / 22 時、各 約10分
 #   (2026-11-19 優: 長編の無い時間帯をお試しでニュース枠に割り当て)
+# - ニュースの出力は news_latest.mp3 に統一し、毎回上書きする (2026-11-19)
+#   AzuraCast 側は news_latest 1曲のプレイリスト + スケジュールブロックで受ける
 # - 情報: 毎時 :15 = 交通情報、:45 = 天気情報、各 約3分 (180秒)
 # - 情報は AzuraCast のスケジュール機能で長編の途中にも強制割り込みする
 # - 長編の原稿に天気・渋滞を混ぜない (情報は独立スポットに分離)
 
-version: 3
+version: 4
 timezone: Asia/Tokyo
 
 # ============================================================
 # レーン1: 長編番組 (毎日 12 / 15 / 18 / 21 時、各 30〜45分)
-# 天気・渋滞はプロンプトに混ぜない (情報レーンに分離済み)
+# 曜日別編成 (2026-11-19 確定)。天気・渋滞はプロンプトに混ぜない。
+# status: active = 生成稼働中 / planned = 編成のみ確定し生成は未実装
 # ============================================================
 programs:
-  - id: long-1200
-    title: "12時の長編 (仮)"
-    schedule: { days: [mon, tue, wed, thu, fri, sat, sun], time: "12:00" }
-    generate_before_minutes: 180       # 合成時間を要するため早めに先行生成 (要実測)
-    duration_target_sec: [1800, 2700]  # 30〜45分。atempo の上限もこの枠に合わせる
-    script:
-      mode: segmented                  # 30〜45分 = 原稿 約12,000〜16,000字想定。
-      segments: 3                      # 1回のLLM出力上限に収めるため幕ごとに分割生成して連結
-    prompt: prompts/long-1200.txt      # 天気・渋滞コンテキストは注入しない
+  # ---- 12時台 ----
+  - id: blog-talk-1200
+    title: "ブログトーク"
+    schedule: { days: [mon, tue, wed, thu, fri], time: "12:00" }
+    generate_before_minutes: 10
+    duration_target_sec: [1800, 2700]  # 30〜45分
+    status: planned
+    source: "自分のブログ記事。最新記事優先 + 過去記事プールからローテーション"
     speakers: []                       # 未決定
     llm: Muse
-    azuracast: { station: 8, playlist: "long-1200" }
-    podcast: "<未決定>"                # スロット別フィードにするか選抜か
+    azuracast: { station: 11, playlist: "blog-talk-1200" }
+    podcast: "<未決定>"
 
-  - id: long-1500
-    title: "15時の長編 (仮)"
+  - id: outing-guide-1200-sat
+    title: "関東お出かけガイド"
+    schedule: { days: [sat], time: "12:00" }
+    generate_before_minutes: 10
+    duration_target_sec: [1800, 2700]
+    status: planned
+    note: "金曜18時「関東の魅力再発見」の当日ガイド版。今日明日行ける場所を紹介"
+    speakers: []
+    llm: Muse
+    azuracast: { station: 11, playlist: "outing-guide-1200" }
+    podcast: "<未決定>"
+
+  - id: lunch-1200-sun
+    title: "お昼、何食べる？"
+    schedule: { days: [sun], time: "12:00" }
+    generate_before_minutes: 10
+    duration_target_sec: [1800, 2700]
+    status: planned
+    source: "自炊レシピ紹介。レシピのお題プールから選ぶ"
+    speakers: []
+    llm: Muse
+    azuracast: { station: 11, playlist: "lunch-1200" }
+    podcast: "<未決定>"
+
+  # ---- 15時台 (看板: 全曜日ガジェットマニア) ----
+  - id: gadget-mania-1500
+    title: "ガジェットマニア"
     schedule: { days: [mon, tue, wed, thu, fri, sat, sun], time: "15:00" }
-    generate_before_minutes: 180
+    generate_before_minutes: 10
     duration_target_sec: [1800, 2700]
-    script: { mode: segmented, segments: 3 }
-    prompt: prompts/long-1500.txt
-    speakers: []
+    status: active
+    generator: py/tools/run_program_job.py
+    note: "お題プール18件から3件ローテーション + ブログ最新記事ピックアップ。土日は週末版"
+    speakers: ["四国めたん", "春日部つむぎ", "ずんだもん"]
     llm: Muse
-    azuracast: { station: 8, playlist: "long-1500" }
+    azuracast: { station: 11, playlist: "gadget-mania-1500" }
     podcast: "<未決定>"
 
-  - id: long-1800
-    title: "18時の長編 (仮)"
-    schedule: { days: [mon, tue, wed, thu, fri, sat, sun], time: "18:00" }
-    generate_before_minutes: 180
+  # ---- 18時台 ----
+  - id: jisaba-1800
+    title: "自鯖のある生活"
+    schedule: { days: [mon, tue, wed, thu], time: "18:00" }
+    generate_before_minutes: 10
     duration_target_sec: [1800, 2700]
-    script: { mode: segmented, segments: 3 }
-    prompt: prompts/long-1800.txt
+    status: planned
+    source: "Docker / Portainer / NAS など自宅インフラのお題プール"
     speakers: []
     llm: Muse
-    azuracast: { station: 8, playlist: "long-1800" }
+    azuracast: { station: 11, playlist: "jisaba-1800" }
     podcast: "<未決定>"
 
-  - id: long-2100
-    title: "21時の長編 (仮)"
-    schedule: { days: [mon, tue, wed, thu, fri, sat, sun], time: "21:00" }
-    generate_before_minutes: 180
+  - id: jisaba-1800-sat
+    title: "自鯖のある生活 (休日メンテ編)"
+    schedule: { days: [sat], time: "18:00" }
+    generate_before_minutes: 10
     duration_target_sec: [1800, 2700]
-    script: { mode: segmented, segments: 3 }
-    prompt: prompts/long-2100.txt
+    status: planned
+    note: "平日版のバリエーション。休日にやるメンテ作業の色を出す"
     speakers: []
     llm: Muse
-    azuracast: { station: 8, playlist: "long-2100" }
+    azuracast: { station: 11, playlist: "jisaba-1800-sat" }
+    podcast: "<未決定>"
+
+  - id: kanto-1800-fri
+    title: "土曜日、日曜日に行きたい！関東の魅力再発見！"
+    schedule: { days: [fri], time: "18:00" }
+    generate_before_minutes: 10
+    duration_target_sec: [1800, 2700]
+    status: planned
+    source: "関東のお出かけスポット情報 (情報源は別途設計)"
+    speakers: []
+    llm: Muse
+    azuracast: { station: 11, playlist: "kanto-1800" }
+    podcast: "<未決定>"
+
+  - id: indie-band-1800-sun
+    title: "いま、このインディーズバンドが熱い！！！"
+    schedule: { days: [sun], time: "18:00" }
+    generate_before_minutes: 10
+    duration_target_sec: [1800, 2700]
+    status: planned
+    source: "インディーズバンドの音楽情報 (紹介トークのみ。音源そのものは流さない)"
+    speakers: []
+    llm: Muse
+    azuracast: { station: 11, playlist: "indie-band-1800" }
+    podcast: "<未決定>"
+
+  # ---- 21時台 ----
+  - id: nichijou-2100
+    title: "ねるるの日常"
+    schedule: { days: [mon, tue, wed, thu, sat], time: "21:00" }
+    generate_before_minutes: 10
+    duration_target_sec: [1800, 2700]
+    status: planned
+    source: "ゆるい日常雑談。お題プール型でネタ切れを防ぐ。土曜は週末版"
+    speakers: []
+    llm: Muse
+    azuracast: { station: 11, playlist: "nichijou-2100" }
+    podcast: "<未決定>"
+
+  - id: reading-2100-fri
+    title: "朗読"
+    schedule: { days: [fri], time: "21:00" }
+    generate_before_minutes: 10
+    duration_target_sec: [1800, 2700]
+    status: planned
+    source: "青空文庫の短編 (著作権フリー)。一週間の締めの静かな枠"
+    speakers: []                       # 朗読者 未決定
+    llm: Muse
+    azuracast: { station: 11, playlist: "reading-2100" }
+    podcast: "<未決定>"
+
+  - id: nemurenai-2100-sun
+    title: "ねるるの眠れない話"
+    schedule: { days: [sun], time: "21:00" }
+    generate_before_minutes: 10
+    duration_target_sec: [1800, 2700]
+    status: planned
+    note: "日曜夜のトーク枠。金曜の朗読 (静かな締め) とは違う、少し浮ついた夜の空気"
+    speakers: []
+    llm: Muse
+    azuracast: { station: 11, playlist: "nemurenai-2100" }
     podcast: "<未決定>"
 
 # ============================================================
@@ -93,7 +190,7 @@ info_spots:
     jingle: { in: true, out: true }    # 「ここで交通情報です」を枠として明示
     speakers: []                       # 未決定 (元は雨晴はうが交通担当)
     output: rotating                   # traffic_latest.mp3 を上書きし続ける (アーカイブしない)
-    azuracast: { station: 8, playlist: "traffic-spot", interrupt: true }
+    azuracast: { station: 11, playlist: "traffic-spot", interrupt: true }
     podcast: false                     # 鮮度が切れる情報は Podcast に載せない
     during_long_programs: interrupt    # AzuraCast スケジュールで強制割り込み (決定済み)
 
@@ -110,7 +207,7 @@ info_spots:
     jingle: { in: true, out: true }    # 「ここでお天気です」を枠として明示
     speakers: []                       # 未決定 (元は雨晴はうが天気担当)
     output: rotating                   # weather_latest.mp3 を上書きし続ける
-    azuracast: { station: 8, playlist: "weather-spot", interrupt: true }
+    azuracast: { station: 11, playlist: "weather-spot", interrupt: true }
     podcast: false
     during_long_programs: interrupt    # ただし長編が45分尺だと終了時刻と重なる点に注意 (PLAN参照)
 
@@ -119,6 +216,7 @@ info_spots:
 # 長編の無い時間帯を埋める約10分枠。NHK + ITmedia の RSS から
 # 見出しを取り、トップ記事の本文をスクレイピングして深堀りする。
 # 深堀りの話題は当日の使い回しを避け、枠ごとに新しいものを選ぶ。
+# 出力は news_latest.mp3 に統一し毎回上書き (2026-11-19)。
 # ============================================================
 news:
   - id: neruraji-news
@@ -131,15 +229,15 @@ news:
     generator: py/tools/run_news_job.py
     prompt: prompts/steps/news-program.md
     sources: ["NHK RSS (cat0)", "ITmedia RSS (news_bursts)"]
-    output: "news_<slot>_latest.mp3"
-    azuracast: { station: 8 }
+    output: "news_latest.mp3"
+    azuracast: { station: 11 }
     podcast: false                     # 鮮度が切れる情報は Podcast に載せない
 
 # ============================================================
 # 生成キューの原則
 # ============================================================
 # - ジョブは直列実行 (VOICEVOX 合成が CPU を使うため並列にしない)
-# - 締切が近い情報スポットを優先し、長編は3時間の先行枠の中で空き時間に作る
+# - 締切が近い情報スポットを優先し、長編は先行枠の中で空き時間に作る
 # - 対象回のファイルが既にあればスキップ (冪等)
 # - AzuraCast の割り込みは割り込まれたトラックがスポット後に途中再開する挙動。
 #   1回の割り込みでタイムラインが約3分ずれる (同居人環境で挙動確認済み)
