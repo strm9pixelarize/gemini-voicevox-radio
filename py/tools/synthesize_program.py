@@ -9,11 +9,15 @@
   めたん=四国めたん、つむぎ=春日部つむぎ、ずんだもん=ずんだもん、
   いずれもスタイル「ノーマル」を優先する。解決した ID は冒頭に表示する。
 - 行間には 0.35 秒の無音を入れる（スポットと同じ較正）。
+- 最終段で loudnorm により音量を目標 LUFS に揃える（--no-loudnorm で無効）。
+  --bgm を渡すと、BGM をループして下に敷き、声に合わせて自動で
+  引っ込ませる（ダッキング）処理も最終段で行う。
 """
 from __future__ import annotations
 
 import argparse
 import io
+import json
 import re
 import shutil
 import subprocess
@@ -63,15 +67,88 @@ def concat_wavs(wavs: list[bytes], gap_sec: float = GAP_SEC):
     return out.getvalue(), duration
 
 
-def to_mp3(wav_bytes: bytes, mp3_path: Path) -> None:
-    if shutil.which("ffmpeg") is None:
-        raise RuntimeError("ffmpeg not found")
-    proc = subprocess.run(
-        ["ffmpeg", "-y", "-v", "error", "-i", "pipe:0",
-         "-codec:a", "libmp3lame", "-b:a", "128k", str(mp3_path)],
-        input=wav_bytes, capture_output=True)
+def _ffmpeg(args: list[str]) -> None:
+    proc = subprocess.run(["ffmpeg", "-y", "-v", "error", *args],
+                          capture_output=True)
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg failed: {proc.stderr.decode()[:300]}")
+
+
+def measure_loudnorm(src: Path, target_i: float) -> dict | None:
+    """loudnorm の測定パス。測れたら測定値の dict、失敗したら None。"""
+    proc = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-i", str(src), "-af",
+         f"loudnorm=I={target_i}:TP=-1.5:LRA=11:print_format=json",
+         "-f", "null", "-"], capture_output=True)
+    blocks = re.findall(r"\{[^{}]*\}",
+                        proc.stderr.decode(errors="replace"), re.S)
+    for block in reversed(blocks):
+        try:
+            data = json.loads(block)
+        except ValueError:
+            continue
+        if "input_i" in data:
+            return data
+    return None
+
+
+def loudnorm_filter(target_i: float, measured: dict | None) -> str:
+    base = f"loudnorm=I={target_i}:TP=-1.5:LRA=11"
+    if not measured:
+        return base
+    return (base + f":measured_I={measured['input_i']}"
+            f":measured_TP={measured['input_tp']}"
+            f":measured_LRA={measured['input_lra']}"
+            f":measured_thresh={measured['input_thresh']}"
+            f":offset={measured['target_offset']}:linear=true")
+
+
+def finalize(wav_bytes: bytes, mp3_path: Path, duration: float,
+             bgm: Path | None, bgm_db: float, target_i: float,
+             loudnorm_on: bool) -> None:
+    """最終段: loudnorm で音量を揃え、あれば BGM をダッキングで敷く。"""
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError("ffmpeg not found")
+    tmp_voice = mp3_path.with_name(mp3_path.stem + ".voice.wav")
+    tmp_mix = mp3_path.with_name(mp3_path.stem + ".mix.wav")
+    tmp_norm = mp3_path.with_name(mp3_path.stem + ".norm.wav")
+    try:
+        tmp_voice.write_bytes(wav_bytes)
+        src = tmp_voice
+        if bgm is not None:
+            dur = f"{duration:.2f}"
+            fade_out = max(0.0, duration - 3)
+            # 声は VOICEVOX のモノラル前提でステレオ化してから BGM と混ぜる。
+            # loudnorm は混ぜた後にかける (BGM 込みの最終音量で揃えるため)
+            fc = (
+                "[0:a]aresample=48000,pan=stereo|c0=c0|c1=c0,"
+                "asplit=2[v][key];"
+                f"[1:a]aresample=48000,volume={bgm_db:.1f}dB,"
+                f"afade=t=in:st=0:d=1.5,afade=t=out:st={fade_out:.2f}:d=3,"
+                f"atrim=0:{dur}[bed];"
+                "[bed][key]sidechaincompress=threshold=0.03:ratio=6:"
+                "attack=150:release=800[duck];"
+                "[v][duck]amix=inputs=2:duration=first:normalize=0,"
+                f"alimiter=limit=0.9,atrim=0:{dur}[out]"
+            )
+            _ffmpeg(["-i", str(tmp_voice), "-stream_loop", "-1",
+                     "-i", str(bgm), "-filter_complex", fc,
+                     "-map", "[out]", str(tmp_mix)])
+            src = tmp_mix
+            print(f"bgm: {bgm.name} ({bgm_db:+.0f} dB, ducking on)")
+        if loudnorm_on:
+            measured = measure_loudnorm(src, target_i)
+            _ffmpeg(["-i", str(src), "-af",
+                     loudnorm_filter(target_i, measured),
+                     "-ar", "48000", str(tmp_norm)])
+            src = tmp_norm
+            src_i = measured["input_i"] if measured else "?"
+            print(f"loudnorm: {src_i} LUFS -> target {target_i} LUFS")
+        _ffmpeg(["-i", str(src), "-codec:a", "libmp3lame",
+                 "-b:a", "128k", str(mp3_path)])
+    finally:
+        for tmp in (tmp_voice, tmp_mix, tmp_norm):
+            tmp.unlink(missing_ok=True)
 
 
 def resolve_speakers(vv: VoiceVoxClient) -> dict[str, int]:
@@ -100,6 +177,13 @@ def main() -> None:
     ap.add_argument("script", help="原稿テキスト（話者: 台詞 の形式）")
     ap.add_argument("--out", default="gadget_program.mp3", help="出力 MP3 パス")
     ap.add_argument("--gap", type=float, default=GAP_SEC, help="行間の無音（秒）")
+    ap.add_argument("--bgm", help="下に敷く BGM のファイル (任意)")
+    ap.add_argument("--bgm-volume-db", type=float, default=-18.0,
+                    help="BGM の音量調整 (dB、既定 -18)")
+    ap.add_argument("--target-lufs", type=float, default=-16.0,
+                    help="loudnorm の目標ラウドネス (既定 -16 LUFS)")
+    ap.add_argument("--no-loudnorm", action="store_true",
+                    help="loudnorm をかけない")
     args = ap.parse_args()
 
     lines = []
@@ -127,7 +211,11 @@ def main() -> None:
                       f"({time.perf_counter() - t0:.0f}s)", flush=True)
     wav_bytes, duration = concat_wavs(wavs, args.gap)
     out = Path(args.out)
-    to_mp3(wav_bytes, out)
+    bgm = Path(args.bgm) if args.bgm else None
+    if bgm is not None and not bgm.exists():
+        raise SystemExit(f"BGM ファイルがありません: {bgm}")
+    finalize(wav_bytes, out, duration, bgm, args.bgm_volume_db,
+             args.target_lufs, not args.no_loudnorm)
     print(f"done: {out} ({out.stat().st_size} bytes, "
           f"audio {duration / 60:.1f} min, synth {time.perf_counter() - t0:.0f}s)")
 

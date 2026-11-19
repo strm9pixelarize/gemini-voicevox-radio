@@ -195,9 +195,14 @@ def main() -> None:
          "--article-json", str(article_path),
          "--extra-dict", str(sheet_path)], PY_DIR)
     mp3 = out_dir / f"program_{args.slot}_latest.mp3"
-    run([sys.executable, "tools/synthesize_program.py",
-         str(trial_dir / "gadget_program_fixed.txt"),
-         "--out", str(mp3)], PY_DIR)
+    synth_cmd = [sys.executable, "tools/synthesize_program.py",
+                 str(trial_dir / "gadget_program_fixed.txt"),
+                 "--out", str(mp3)]
+    # BGM は assets/neruru_bgm に置かれた曲を使う (無ければ声のみ)
+    bgm = PY_DIR.parent / "assets" / "neruru_bgm" / "Evolving_Pads.mp3"
+    if bgm.exists():
+        synth_cmd += ["--bgm", str(bgm)]
+    run(synth_cmd, PY_DIR)
 
     state["next_index"] = (idx + 3) % len(pool)
     state["last_slot"] = args.slot
