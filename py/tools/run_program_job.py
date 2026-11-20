@@ -307,6 +307,11 @@ def main() -> None:
                         "url": article.get("url", ""),
                         "excerpt": make_excerpt(article.get("content", ""))},
     }
+    if akiba_arts:  # AKIBAピックアップも表示用に載せる (コーナーが無い回はキー自体なし)
+        sidecar["akiba_pickup"] = [
+            {"title": a.get("title", ""), "url": a.get("link", ""),
+             "excerpt": make_excerpt(a.get("body", ""))}
+            for a in akiba_arts]
     sidecar_path = out_dir / f"program_{args.slot}_latest.json"
     sidecar_path.write_text(json.dumps(sidecar, ensure_ascii=False,
                                        indent=2), encoding="utf-8")
