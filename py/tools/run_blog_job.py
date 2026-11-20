@@ -111,6 +111,26 @@ def run(cmd: list[str], cwd: Path) -> None:
         raise RuntimeError(f"command failed rc={proc.returncode}: {cmd[1]}")
 
 
+def probe_duration_sec(path: Path) -> float | None:
+    """完成した MP3 の長さ (秒)。ffprobe が無い/失敗したら None。"""
+    try:
+        proc = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "csv=p=0", str(path)], capture_output=True, text=True,
+            timeout=30)
+        return round(float(proc.stdout.strip()), 1)
+    except Exception:
+        return None
+
+
+def make_excerpt(text: str, limit: int = 120) -> str:
+    """記事本文の冒頭を、表示用の抜粋 (1行、limit 字まで) に整える。"""
+    flat = re.sub(r"\s+", " ", text or "").strip()
+    if len(flat) <= limit:
+        return flat
+    return flat[:limit].rstrip() + "…"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--slot", default="12")
@@ -167,6 +187,28 @@ def main() -> None:
          "--out", str(mp3),
          "--title", "ブログトーク",
          "--artist", "ねるるの日常(健全版)"], PY_DIR)
+
+    # サイト表示用のサイドカー JSON (cast ページの放送内容セクション用)。
+    # 音声化が成功したときだけ書く。お題は無いので、特集記事を
+    # blog_pickup に載せる (ページ側は topics 無しでも表示できる)
+    sidecar = {
+        "kind": "blog",
+        "program": "ブログトーク",
+        "slot": args.slot,
+        "air_time": f"{args.slot}:00",
+        "generated_at": datetime.now().astimezone().isoformat(
+            timespec="seconds"),
+        "mp3": mp3.name,
+        "duration_sec": probe_duration_sec(mp3),
+        "blog_pickup": {"title": article.get("title", ""),
+                        "date": article.get("date", ""),
+                        "url": article.get("url", ""),
+                        "excerpt": make_excerpt(article.get("content", ""))},
+    }
+    sidecar_path = out_dir / f"program_{args.slot}_latest.json"
+    sidecar_path.write_text(json.dumps(sidecar, ensure_ascii=False,
+                                       indent=2), encoding="utf-8")
+    log(f"sidecar: {sidecar_path.name}")
 
     if article.get("url"):
         used.append(article["url"])
