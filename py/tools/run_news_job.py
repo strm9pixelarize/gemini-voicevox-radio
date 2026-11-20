@@ -3,7 +3,8 @@
 
 run_scheduler.py から放送枠の10分前に呼ばれ、次の一連を行う:
   1. make_news.py で最新ニュースの原稿を生成する
-     （深堀りは当日に使ったタイトルを避け、毎回新しい話題にする）
+     （深堀りは当日に使ったタイトルを避け、毎回新しい話題にする。
+     原稿が空＝台詞0行なら1回だけ作り直し、それでも空なら失敗にする）
   2. synthesize_program.py で音声化し、output に news_<枠>_latest.mp3 を置く
 
 環境変数:
@@ -17,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -38,6 +40,18 @@ def load_json(path: Path, default):
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return default
+
+
+DIALOGUE_RE = re.compile(r"^(めたん|つむぎ|ずんだもん):\s*(.+)$")
+
+
+def count_dialogue_lines(path: Path) -> int:
+    """原稿ファイルの台詞行数。読めなければ 0。"""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return 0
+    return sum(1 for ln in text.splitlines() if DIALOGUE_RE.match(ln))
 
 
 def run(cmd: list[str], cwd: Path) -> None:
@@ -76,11 +90,21 @@ def main() -> None:
     chosen_path = work / "chosen.json"
 
     trial_dir = work / "trial"
-    run([sys.executable, "tools/make_news.py",
-         "--out-dir", str(trial_dir),
-         "--time-label", SLOTS[args.slot],
-         "--exclude-file", str(exclude_path),
-         "--chosen-file", str(chosen_path)], PY_DIR)
+    make_cmd = [sys.executable, "tools/make_news.py",
+                "--out-dir", str(trial_dir),
+                "--time-label", SLOTS[args.slot],
+                "--exclude-file", str(exclude_path),
+                "--chosen-file", str(chosen_path)]
+    run(make_cmd, PY_DIR)
+    # 空原稿ガード (2026-11-20 19:50 の 20時枠で、素材が取れていたのに
+    # 原稿が 2 chars / 0 lines になり、合成が "no wav data" で落ちた事故)。
+    # 台詞が0行なら1回だけ作り直し、それでも空なら失敗として止める
+    script_path = trial_dir / "news_program.txt"
+    if count_dialogue_lines(script_path) == 0:
+        log("empty program generated; regenerating once")
+        run(make_cmd, PY_DIR)
+        if count_dialogue_lines(script_path) == 0:
+            raise RuntimeError("news program is empty after one retry")
 
     chosen = load_json(chosen_path, [])
     state["used_deep"] = sorted(set(state["used_deep"]) | set(chosen))
