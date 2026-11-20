@@ -7,6 +7,8 @@ run_scheduler.py から放送枠の10分前に呼ばれ、次の一連を行う:
   3. 単語シートを作る（新出単語の読みを LLM に自動で付けさせる）
   4. make_program.py で原稿を生成する
   5. synthesize_program.py で音声化し、output に program_<枠>_latest.mp3 を置く
+  6. サイト表示用に program_<枠>_latest.json (話題3件とブログピックアップ)
+     も MP3 の隣に置く (cast.architectural-n.net が読む)
 
 環境変数:
   PROGRAM_OUT_DIR    出力先 (既定 /data/output)
@@ -87,6 +89,7 @@ def fetch_latest_article(blog_url: str) -> dict:
     if len(content) < 100:
         raise RuntimeError("article body too short")
     return {"title": title, "date": date_m.group(1) if date_m else "",
+            "url": blog_url.rstrip("/") + m.group(1),
             "content": content}
 
 
@@ -230,6 +233,26 @@ def main() -> None:
             synth_cmd += ["--outro", str(outro)]
             log("outro: gadget_mania/outro.mp3")
     run(synth_cmd, PY_DIR)
+
+    # サイト表示用のサイドカー JSON (MP3 と同名で隣に上書き)。
+    # 音声化が成功したときだけ書くので、内容は常に最新の放送と一致する
+    sidecar = {
+        "kind": "gadget",
+        "program": "ガジェットマニア",
+        "slot": args.slot,
+        "air_time": f"{args.slot}:00",
+        "generated_at": datetime.now().astimezone().isoformat(
+            timespec="seconds"),
+        "mp3": mp3.name,
+        "topics": topics,
+        "blog_pickup": {"title": article.get("title", ""),
+                        "date": article.get("date", ""),
+                        "url": article.get("url", "")},
+    }
+    sidecar_path = out_dir / f"program_{args.slot}_latest.json"
+    sidecar_path.write_text(json.dumps(sidecar, ensure_ascii=False,
+                                       indent=2), encoding="utf-8")
+    log(f"sidecar: {sidecar_path.name}")
 
     state["next_index"] = (idx + 3) % len(pool)
     state["last_slot"] = args.slot
