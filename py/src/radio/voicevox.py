@@ -30,8 +30,18 @@ Fallback (added 2026-11-19, after the enoki server outage):
   STATUS_RETRY_WAITS): a single transient 500 used to kill a whole
   159-line synthesis (2026-11-20, gadget 12:00 slot). 4xx is not
   retried; it would fail again deterministically.
+- Line-level fallback (added 2026-11-20): if one line's synthesis
+  still fails with an HTTP error after the same-host retries, that
+  line alone is retried once on the fallback host, and the job then
+  continues on the primary. A 252-char line was reproducibly
+  rejected with HTTP 500 by the 0.25.2 primary while the 0.26.2
+  fallback synthesized it fine (gadget 15:00 slot, 2026-11-20), so
+  an engine-version quirk on a single line must not kill a whole
+  program. This is deliberately narrower than the failover above:
+  the primary is alive, so the process does not switch hosts.
 - Engaging the fallback prints a "VOICEVOX FALLBACK" line so it shows
   up in scheduler logs and in the Discord success/failure summaries.
+  The line-level variant prints "VOICEVOX LINE FALLBACK".
 """
 from __future__ import annotations
 
@@ -175,7 +185,36 @@ class VoiceVoxClient:
         return json.loads(self._request("GET", "/speakers"))
 
     def synthesize_line(self, text: str, speaker: int) -> bytes:
-        """One line of dialogue -> WAV bytes (audio_query + synthesis)."""
+        """One line of dialogue -> WAV bytes (audio_query + synthesis).
+
+        If the current host answers with an HTTP error (after the
+        same-host 5xx retries in _request_once), retry this one line
+        on the fallback host and then return to the current host;
+        the rest of the job is unaffected. See the module docstring
+        (line-level fallback).
+        """
+        try:
+            return self._synthesize_line_here(text, speaker)
+        except RuntimeError as exc:
+            if self._host_idx + 1 >= len(self._hosts):
+                raise
+            saved_idx = self._host_idx
+            current = self._hosts[saved_idx]
+            fallback = self._hosts[saved_idx + 1]
+            print(f"VOICEVOX LINE FALLBACK: {current} rejected a line "
+                  f"({str(exc)[:120]}); retrying it on {fallback}",
+                  flush=True)
+            self._host_idx = saved_idx + 1
+            self.close()
+            self.base = urllib.parse.urlparse(fallback)
+            try:
+                return self._synthesize_line_here(text, speaker)
+            finally:
+                self._host_idx = saved_idx
+                self.close()
+                self.base = urllib.parse.urlparse(current)
+
+    def _synthesize_line_here(self, text: str, speaker: int) -> bytes:
         q = urllib.parse.urlencode({"text": text, "speaker": speaker})
         query = self._request("POST", f"/audio_query?{q}", body=b"")
         q2 = urllib.parse.urlencode({"speaker": speaker})
