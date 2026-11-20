@@ -131,6 +131,26 @@ def build_word_sheet(topics: list[str], article: dict, out_path: Path) -> None:
         f"({sum(1 for s in sheet if s['status'] == 'blank')} blank)")
 
 
+def probe_duration_sec(path: Path) -> float | None:
+    """完成した MP3 の長さ (秒)。ffprobe が無い/失敗したら None。"""
+    try:
+        proc = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "csv=p=0", str(path)], capture_output=True, text=True,
+            timeout=30)
+        return round(float(proc.stdout.strip()), 1)
+    except Exception:
+        return None
+
+
+def make_excerpt(text: str, limit: int = 120) -> str:
+    """記事本文の冒頭を、表示用の抜粋 (1行、limit 字まで) に整える。"""
+    flat = re.sub(r"\s+", " ", text or "").strip()
+    if len(flat) <= limit:
+        return flat
+    return flat[:limit].rstrip() + "…"
+
+
 def run(cmd: list[str], cwd: Path) -> None:
     log("run: " + " ".join(cmd))
     proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
@@ -244,10 +264,12 @@ def main() -> None:
         "generated_at": datetime.now().astimezone().isoformat(
             timespec="seconds"),
         "mp3": mp3.name,
+        "duration_sec": probe_duration_sec(mp3),
         "topics": topics,
         "blog_pickup": {"title": article.get("title", ""),
                         "date": article.get("date", ""),
-                        "url": article.get("url", "")},
+                        "url": article.get("url", ""),
+                        "excerpt": make_excerpt(article.get("content", ""))},
     }
     sidecar_path = out_dir / f"program_{args.slot}_latest.json"
     sidecar_path.write_text(json.dumps(sidecar, ensure_ascii=False,
