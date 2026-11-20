@@ -15,6 +15,8 @@ Usage:
 計測値 (総文字数 / 合成所要秒 / 音声秒数) を標準出力に出す。
 MP3 には ID3 タグ (title=天気情報/交通情報、artist、date=生成日) を
 付ける (2026-11-20、長編・ニュースと同方針)。
+音量も長編・ニュースと同じ -16 LUFS に loudnorm (2パス) で揃える
+(2026-11-20)。
 
 ジングル: --jingle-in / --jingle-out で音声ファイル (mp3/wav 等、
 ffmpeg で読める形式) を指定すると、声の前後に付ける。未指定時は
@@ -27,9 +29,11 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import wave
 from datetime import datetime
@@ -104,21 +108,64 @@ def load_as_voice_wav(path: Path) -> bytes:
     return proc.stdout
 
 
+TARGET_I = -16.0  # 長編・ニュースと共通の目標ラウドネス (LUFS)
+
+
+# loudnorm の2ヘルパーは synthesize_program.py と同じ実装。
+# 共通モジュールへの切り出しは今後の課題 (STRUCTURE 候補)
+def measure_loudnorm(src: Path, target_i: float) -> dict | None:
+    """loudnorm の測定パス。測れたら測定値の dict、失敗したら None。"""
+    proc = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-i", str(src), "-af",
+         f"loudnorm=I={target_i}:TP=-1.5:LRA=11:print_format=json",
+         "-f", "null", "-"], capture_output=True)
+    blocks = re.findall(r"\{[^{}]*\}",
+                        proc.stderr.decode(errors="replace"), re.S)
+    for block in reversed(blocks):
+        try:
+            data = json.loads(block)
+        except ValueError:
+            continue
+        if "input_i" in data:
+            return data
+    return None
+
+
+def loudnorm_filter(target_i: float, measured: dict | None) -> str:
+    base = f"loudnorm=I={target_i}:TP=-1.5:LRA=11"
+    if not measured:
+        return base
+    return (base + f":measured_I={measured['input_i']}"
+            f":measured_TP={measured['input_tp']}"
+            f":measured_LRA={measured['input_lra']}"
+            f":measured_thresh={measured['input_thresh']}"
+            f":offset={measured['target_offset']}:linear=true")
+
+
 def to_mp3(wav_bytes: bytes, mp3_path: Path, title: str | None = None) -> None:
     if shutil.which("ffmpeg") is None:
         raise RuntimeError("ffmpeg not found (WAV のままでは出力できない)")
-    cmd = ["ffmpeg", "-y", "-v", "error", "-i", "pipe:0",
-           "-codec:a", "libmp3lame", "-b:a", "128k"]
-    if title:
-        cmd += ["-metadata", f"title={title}",
-                "-metadata", f"artist={SPOT_ARTIST}",
-                "-metadata", f"date={datetime.now():%Y-%m-%d}"]
-    proc = subprocess.run(
-        cmd + [str(mp3_path)],
-        input=wav_bytes, capture_output=True,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"ffmpeg failed: {proc.stderr.decode()[:300]}")
+    # 音量調整 (2パス loudnorm) の測定のため、一旦ファイルに書く
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+        tf.write(wav_bytes)
+        tmp = Path(tf.name)
+    try:
+        measured = measure_loudnorm(tmp, TARGET_I)
+        cmd = ["ffmpeg", "-y", "-v", "error", "-i", str(tmp),
+               "-af", loudnorm_filter(TARGET_I, measured),
+               "-codec:a", "libmp3lame", "-b:a", "128k"]
+        if title:
+            cmd += ["-metadata", f"title={title}",
+                    "-metadata", f"artist={SPOT_ARTIST}",
+                    "-metadata", f"date={datetime.now():%Y-%m-%d}"]
+        proc = subprocess.run(cmd + [str(mp3_path)], capture_output=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f"ffmpeg failed: {proc.stderr.decode()[:300]}")
+        if measured:
+            print(f"loudnorm: {measured['input_i']} LUFS "
+                  f"-> target {TARGET_I} LUFS")
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def resolve_jingle(explicit: str | None, assets_dir: Path, name: str) -> Path | None:
