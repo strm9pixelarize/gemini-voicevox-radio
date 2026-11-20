@@ -3,9 +3,10 @@
 # 生成する番組を決める。値は生成器の種別:
 #   gadget = ガジェットマニア (run_program_job.py)
 #   blog   = ブログトーク (run_blog_job.py)
+#   jisaba = 自鯖のある生活 (run_jisaba_job.py)
 #   none   = 生成しない
 slots:
   "12": blog    # ブログトーク
   "15": gadget  # ガジェットマニア
-  "18": gadget  # 本来は「自鯖のある生活」。生成器ができたら種別を差し替える
+  "18": jisaba  # 自鯖のある生活
   "21": gadget  # 本来は「ねるるの日常」。同上

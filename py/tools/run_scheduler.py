@@ -40,7 +40,8 @@ SCHEDULE_DIR = Path(os.environ.get(
     Path(__file__).resolve().parent.parent.parent / "schedule"))
 # グリッドの種別 -> (生成スクリプト, 通知用の番組名)
 GRID_PROGRAMS = {"gadget": ("tools/run_program_job.py", "ガジェットマニア"),
-                 "blog": ("tools/run_blog_job.py", "ブログトーク")}
+                 "blog": ("tools/run_blog_job.py", "ブログトーク"),
+                 "jisaba": ("tools/run_jisaba_job.py", "自鯖のある生活")}
 # ニュース: 長編の無い時間帯を埋める約10分枠 (放送の10分前に生成開始)
 NEWS_JOBS = [(9, 50, "10"), (10, 50, "11"), (12, 50, "13"), (13, 50, "14"),
              (15, 50, "16"), (16, 50, "17"), (18, 50, "19"), (19, 50, "20"),
