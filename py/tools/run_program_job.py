@@ -119,7 +119,20 @@ def build_word_sheet(topics: list[str], article: dict, out_path: Path,
             hit = next((ln for ln in lines if w in ln), topics[0])
             items.append(f"- {w}（使用例: {hit[:80]}）")
         prompt = mp.RESOLVE_PROMPT.replace("{単語リスト}", "\n".join(items))
-        data = json.loads(mp.strip_fence(mp.call_llm(prompt, 2000)))
+        # 候補が多いと応答が途中で切れて JSON が壊れる (アキバ本文が
+        # 加わって候補が増えたため実際に発生)。予算を広げて再試行し、
+        # それでも駄目なら単語シートなしで進める (原稿側にも自動解決
+        # があるので、シートは無くても番組は作れる)
+        data = []
+        for budget in (3000, 6000):
+            try:
+                data = json.loads(mp.strip_fence(mp.call_llm(prompt, budget)))
+                break
+            except ValueError:
+                log(f"word sheet: JSON parse failed (budget {budget}), "
+                    "retrying" if budget == 3000 else
+                    "word sheet: JSON parse failed; continuing without sheet")
+                data = []
         readings = {str(d.get("term", "")): str(d.get("kana", ""))
                     for d in data if isinstance(d, dict)}
         for w in sorted(cands):
