@@ -18,11 +18,14 @@ MP3 には ID3 タグ (title=天気情報/交通情報、artist、date=生成日
 音量も長編・ニュースと同じ -16 LUFS に loudnorm (2パス) で揃える
 (2026-11-20)。
 
-ジングル: --jingle-in / --jingle-out で音声ファイル (mp3/wav 等、
-ffmpeg で読める形式) を指定すると、声の前後に付ける。未指定時は
---assets-dir (既定 ../assets) の jingle_in.mp3 / jingle_out.mp3 を
-探し、あれば使う。ジングルの秒数ぶん、原稿バジェットは自動で
-差し引かれる (読み上げ約5.0字/秒で換算。--max-chars 明示時は除く)。
+ジングル/BGM: 種別専用アセット (assets/neruru_bgm/<kind>/ の
+intro.mp3 / outro.mp3 / bgm.mp3、2026-11-20 に SUNO で生成) があれば
+優先して使う。--jingle-in / --jingle-out 指定時はそちらが優先。
+種別専用が無い場合は従来どおり --assets-dir (既定 ../assets) の
+jingle_in.mp3 / jingle_out.mp3 を探す。BGM は声の下にダッキング
+付きでループ再生する (長編の finalize と同じ方式・音量 -18 dB)。
+ジングルの秒数ぶん、原稿バジェットは自動で差し引かれる
+(読み上げ約5.0字/秒で換算。--max-chars 明示時は除く。BGM は対象外)。
 """
 from __future__ import annotations
 
@@ -168,17 +171,62 @@ def to_mp3(wav_bytes: bytes, mp3_path: Path, title: str | None = None) -> None:
         tmp.unlink(missing_ok=True)
 
 
+def find_audio(base: Path, stem: str) -> Path | None:
+    """base/<stem>.(mp3|wav|m4a|ogg) を探す。"""
+    for ext in ("mp3", "wav", "m4a", "ogg"):
+        p = base / f"{stem}.{ext}"
+        if p.exists():
+            return p
+    return None
+
+
 def resolve_jingle(explicit: str | None, assets_dir: Path, name: str) -> Path | None:
     if explicit:
         p = Path(explicit)
         if not p.exists():
             raise RuntimeError(f"jingle not found: {p}")
         return p
-    for ext in ("mp3", "wav", "m4a", "ogg"):
-        p = assets_dir / f"{name}.{ext}"
-        if p.exists():
-            return p
-    return None
+    return find_audio(assets_dir, name)
+
+
+BGM_DB = -18.0  # 声に対する BGM の音量 (長編の --bgm-volume-db 既定と同じ)
+
+
+def mix_bgm(voice_bytes: bytes, bgm: Path, duration: float) -> bytes | None:
+    """声の WAV (24kHz mono) の下に BGM をループで敷く (ダッキング付き)。
+
+    synthesize_program.finalize と同じレシピをモノラルで。失敗したら
+    None を返し、呼び出し側は BGM なしで続行する (放送を止めない)。
+    """
+    if shutil.which("ffmpeg") is None:
+        return None
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+        tf.write(voice_bytes)
+        tmp = Path(tf.name)
+    try:
+        dur = f"{duration:.2f}"
+        fade_out = max(0.0, duration - 3)
+        fc = (
+            "[0:a]asplit=2[v][key];"
+            f"[1:a]aresample={VOICE_RATE},volume={BGM_DB:.1f}dB,"
+            f"afade=t=in:st=0:d=1.5,afade=t=out:st={fade_out:.2f}:d=3,"
+            f"atrim=0:{dur}[bed];"
+            "[bed][key]sidechaincompress=threshold=0.03:ratio=6:"
+            "attack=150:release=800[duck];"
+            "[v][duck]amix=inputs=2:duration=first:normalize=0,"
+            f"alimiter=limit=0.9,atrim=0:{dur}[out]"
+        )
+        proc = subprocess.run(
+            ["ffmpeg", "-y", "-v", "error", "-i", str(tmp),
+             "-stream_loop", "-1", "-i", str(bgm),
+             "-filter_complex", fc, "-map", "[out]",
+             "-ar", str(VOICE_RATE), "-ac", "1", "-f", "wav", "pipe:1"],
+            capture_output=True)
+        if proc.returncode != 0 or not proc.stdout:
+            return None
+        return proc.stdout
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def main() -> int:
@@ -194,24 +242,44 @@ def main() -> int:
     ap.add_argument("--assets-dir", default="../assets",
                     help="ジングルの既定の置き場 (jingle_in.mp3 等を探す)")
     ap.add_argument("--no-jingle", action="store_true", help="ジングルを使わない")
+    ap.add_argument("--bgm", default=None, help="声の下に敷く BGM ファイル")
+    ap.add_argument("--no-bgm", action="store_true", help="BGM を使わない")
     args = ap.parse_args()
 
     # --- ジングル (先に秒数を確定させ、原稿バジェットから差し引く) ---
+    # 優先順: 明示指定 > 種別専用 (neruru_bgm/<kind>/intro|outro) > 共有
     jingle_wavs: dict[str, bytes] = {}
     jingle_sec = 0.0
     if not args.no_jingle:
         assets = Path(args.assets_dir)
-        for key, explicit, name in (
-            ("in", args.jingle_in, "jingle_in"),
-            ("out", args.jingle_out, "jingle_out"),
+        kind_dir = assets / "neruru_bgm" / args.kind
+        for key, explicit, name, kind_stem in (
+            ("in", args.jingle_in, "jingle_in", "intro"),
+            ("out", args.jingle_out, "jingle_out", "outro"),
         ):
-            p = resolve_jingle(explicit, assets, name)
+            if explicit:
+                p = resolve_jingle(explicit, assets, name)
+            else:
+                p = find_audio(kind_dir, kind_stem)
+                if p is None:
+                    p = resolve_jingle(None, assets, name)
             if p is not None:
                 data = load_as_voice_wav(p)
                 jingle_wavs[key] = data
                 sec = wav_duration(data)
                 jingle_sec += sec
                 print(f"jingle {key}: {p} ({sec:.2f}s)")
+
+    # --- BGM (種別専用のみ。声の下に敷くのでバジェットには影響しない) ---
+    bgm_path: Path | None = None
+    if not args.no_bgm:
+        if args.bgm:
+            bgm_path = Path(args.bgm)
+            if not bgm_path.exists():
+                raise RuntimeError(f"bgm not found: {bgm_path}")
+        else:
+            bgm_path = find_audio(
+                Path(args.assets_dir) / "neruru_bgm" / args.kind, "bgm")
 
     budget = args.max_chars or DEFAULT_MAX_CHARS
     if jingle_wavs and not args.max_chars:
@@ -236,10 +304,21 @@ def main() -> int:
             print(f"  synth {time.perf_counter() - lt0:6.2f}s  {line[:24]}")
     synth_sec = time.perf_counter() - t0
 
+    voice_bytes, voice_sec = concat_wavs(wavs)
+    bgm_used: str | None = None
+    if bgm_path is not None:
+        mixed = mix_bgm(voice_bytes, bgm_path, voice_sec)
+        if mixed is not None:
+            voice_bytes = mixed
+            bgm_used = str(bgm_path)
+            print(f"bgm: {bgm_path} ({BGM_DB:+.0f} dB, ducking on)")
+        else:
+            print(f"bgm: mixing failed, continuing without bgm: {bgm_path}")
+
     segments: list[bytes] = []
     if "in" in jingle_wavs:
         segments.append(jingle_wavs["in"])
-    segments.extend(wavs)
+    segments.append(voice_bytes)
     if "out" in jingle_wavs:
         segments.append(jingle_wavs["out"])
     wav_bytes, duration = concat_wavs(segments)
@@ -257,6 +336,7 @@ def main() -> int:
         "chars": total_chars,
         "synth_sec": round(synth_sec, 2),
         "jingle_sec": round(jingle_sec, 2),
+        "bgm": bgm_used,
         "audio_sec": round(duration, 2),
         "target_sec": 180,
         "output": str(mp3_path),
