@@ -359,6 +359,10 @@ def main() -> int:
     ap.add_argument("--article-json",
                     help="ブログ記事の JSON (title/date/content)。"
                          "あれば抽出プロンプトを使う")
+    ap.add_argument("--akiba-json",
+                    help="AKIBAピックアップ用記事の JSON "
+                         "([{title/link/date/body} ×2])。"
+                         "あればアキバピックアップのコーナーを生成する")
     ap.add_argument("--topics-json",
                     help="お題の JSON {topics: [3件], time, greeting}。"
                          "あれば既定のお題を差し替える")
@@ -426,6 +430,23 @@ def main() -> int:
         print("[ideation] pickup (memo fallback) done", flush=True)
     (out / "material_pickup.json").write_text(materials["pickup"])
 
+    # --- 2.5 AKIBAピックアップ素材 ---
+    akiba_titles: list[str] = []
+    if args.akiba_json and Path(args.akiba_json).exists():
+        extract_tpl = (steps / "akiba-extract.md").read_text()
+        akiba_raw = Path(args.akiba_json).read_text()
+        prompt = fill(extract_tpl, blocks, 記事JSON=akiba_raw)
+        raw = strip_fence(call_llm(prompt, 6000))
+        materials["akiba"] = conv(raw)
+        (out / "material_akiba.json").write_text(materials["akiba"])
+        try:
+            for a in json.loads(materials["akiba"]).get("articles", []):
+                akiba_titles.append(a.get("title_spoken") or a.get("title", ""))
+        except (ValueError, AttributeError):
+            akiba_titles = []
+        print(f"[extract] akiba done ({len(akiba_titles)} articles)",
+              flush=True)
+
     # --- 固定文 (番組の並び順) ---
     topic_titles = [conv(t).replace("/", "と") for t in TOPICS]
     pickup_title = conv(PICKUP_TITLE)
@@ -441,7 +462,8 @@ def main() -> int:
     import gadget_check as _gc
     _fx_pairs = _gc.fixed_from_common(_gc.parse_common(
         str(ROOT / "prompts/parts/gadget-common.md"))) or []
-    _fx_subs = {"挨拶": GREETING, "時刻": TIME, "記事タイトル": pickup_title}
+    _fx_subs = {"挨拶": GREETING, "時刻": TIME, "記事タイトル": pickup_title,
+                "アキバタイトル": akiba_titles[0] if akiba_titles else ""}
     _fx_subs.update({f"お題{i}": t
                      for i, t in enumerate(topic_titles, start=1)})
     _fx_by_sub: dict[str, list[str]] = {}
@@ -467,6 +489,7 @@ def main() -> int:
         "time": _fx_one("時刻"),
         "show": _fx_one("番組名"),
         "topics": _fx_one("お題紹介"),
+        "akiba_intro": _fx_one("アキバ紹介"),
         "blog_intro": _fx_one("ブログ紹介"),
         "blog_link": _fx_one("記事の案内"),
         "credit": _fx_one("提供"),
@@ -486,7 +509,8 @@ def main() -> int:
     tpl = (steps / "section-topic.md").read_text()
     next_fixed = {1: "（次のセクションは、めたんの振りから始まります）",
                   2: "（次のセクションは、めたんの振りから始まります）",
-                  3: fixed["blog_intro"]}
+                  3: fixed["akiba_intro"] if akiba_titles
+                     else fixed["blog_intro"]}
     prev = last_turns(sections["opening"])
     for i, topic in enumerate(TOPICS, start=1):
         sections[f"topic{i}"] = conv(call_llm(
@@ -505,6 +529,14 @@ def main() -> int:
                 article_age = "古い記事"
         except ValueError:
             pass
+    if akiba_titles:
+        tpl = (steps / "section-akiba.md").read_text()
+        sections["akiba"] = conv(call_llm(
+            fill(tpl, blocks, 素材JSON=materials["akiba"],
+                 直前の行=fixed["akiba_intro"],
+                 直後の行=fixed["blog_intro"]), 8000))
+        print("[section] akiba done", flush=True)
+
     tpl = (steps / "section-pickup.md").read_text()
     sections["pickup"] = conv(call_llm(
         fill(tpl, blocks, 記事素材JSON=materials["pickup"],
@@ -518,6 +550,13 @@ def main() -> int:
         except Exception:
             pts = []
         talked.append(f"お題{i}「{topic}」：" + "／".join(pts))
+    if akiba_titles:
+        try:
+            sums = [a.get("summary", "")
+                    for a in json.loads(materials["akiba"])["articles"]]
+            talked.append("アキバピックアップ：" + "／".join(sums))
+        except Exception:
+            talked.append("アキバピックアップ：" + "／".join(akiba_titles))
     try:
         talked.append("ブログピックアップ：" +
                       json.loads(materials["pickup"])["summary"])
@@ -532,13 +571,16 @@ def main() -> int:
     for name, body in sections.items():
         (out / f"section_{name}.txt").write_text(body)
 
-    # --- 4. 結合 (番組の並び 15段) ---
+    # --- 4. 結合 (番組の並び) ---
+    akiba_parts = ([fixed["akiba_intro"], sections["akiba"]]
+                   if akiba_titles else [])
     parts = (fixed["greet"] + [fixed["time"], fixed["show"],
                                sections["opening"], fixed["topics"],
                                sections["topic1"], sections["topic2"],
-                               sections["topic3"], fixed["blog_intro"],
-                               sections["pickup"], fixed["blog_link"],
-                               sections["ending"], fixed["credit"]]
+                               sections["topic3"]] + akiba_parts +
+             [fixed["blog_intro"],
+              sections["pickup"], fixed["blog_link"],
+              sections["ending"], fixed["credit"]]
              + fixed["sponsors"] + fixed["close"])
     raw_full = "\n\n".join(p.strip() for p in parts) + "\n"
     (out / "gadget_program_raw.txt").write_text(raw_full)
@@ -565,6 +607,18 @@ def main() -> int:
                     if r.get("kana") in well_known:
                         r["full"] = ""
                     merged_readings.append(r)
+        except (ValueError, AttributeError):
+            pass
+    if akiba_titles:  # アキバ素材の読みは記事ごとに分かれているので集約
+        try:
+            for a in json.loads(materials["akiba"]).get("articles", []):
+                for r in a.get("readings", []):
+                    if r.get("term") and r["term"] not in seen_terms:
+                        seen_terms.add(r["term"])
+                        r = dict(r)
+                        if r.get("kana") in well_known:
+                            r["full"] = ""
+                        merged_readings.append(r)
         except (ValueError, AttributeError):
             pass
     (out / "materials.json").write_text(json.dumps(

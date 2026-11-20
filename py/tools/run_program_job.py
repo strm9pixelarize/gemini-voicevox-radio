@@ -93,13 +93,15 @@ def fetch_latest_article(blog_url: str) -> dict:
             "content": content}
 
 
-def build_word_sheet(topics: list[str], article: dict, out_path: Path) -> None:
+def build_word_sheet(topics: list[str], article: dict, out_path: Path,
+                     extra_text: str = "") -> None:
     """記事とお題から新出の英字単語を抜き、読みを LLM に付けさせて保存する。"""
     sys.path.insert(0, str(TOOLS))
     import gadget_check as gc
     import make_program as mp
 
-    source = "\n".join(topics) + "\n" + article.get("content", "")
+    source = ("\n".join(topics) + "\n" + article.get("content", "")
+              + "\n" + extra_text)
     blocks = gc.parse_common(str(PY_DIR.parent / "prompts/parts/gadget-common.md"))
     entries, _ = gc.dict_from_common(blocks)
     known = {t for t, _ in entries}
@@ -208,15 +210,36 @@ def main() -> None:
     topics_path_out.write_text(json.dumps(topics_json, ensure_ascii=False),
                                encoding="utf-8")
 
+    # AKIBAピックアップ用に、新製品ニュースを2本取る (失敗しても番組は作る)
+    sys.path.insert(0, str(TOOLS))
+    import akiba as akiba_mod
+
+    akiba_arts: list[dict] = []
+    akiba_path = work / "akiba.json"
+    try:
+        akiba_arts = akiba_mod.pick_with_bodies(set(state.get("akiba_used", [])))
+        log(f"akiba: {[a['title'][:30] for a in akiba_arts]}")
+    except Exception as e:
+        log(f"akiba fetch failed ({e}); skipping corner")
+    akiba_text = ""
+    if akiba_arts:
+        akiba_path.write_text(json.dumps(akiba_arts, ensure_ascii=False),
+                              encoding="utf-8")
+        akiba_text = "\n".join(a["title"] + "\n" + a["body"]
+                               for a in akiba_arts)
+
     sheet_path = work / "word_sheet.json"
-    build_word_sheet(topics, article, sheet_path)
+    build_word_sheet(topics, article, sheet_path, extra_text=akiba_text)
 
     trial_dir = work / "trial"
-    run([sys.executable, "tools/make_program.py",
-         "--out-dir", str(trial_dir),
-         "--topics-json", str(topics_path_out),
-         "--article-json", str(article_path),
-         "--extra-dict", str(sheet_path)], PY_DIR)
+    cmd = [sys.executable, "tools/make_program.py",
+           "--out-dir", str(trial_dir),
+           "--topics-json", str(topics_path_out),
+           "--article-json", str(article_path),
+           "--extra-dict", str(sheet_path)]
+    if akiba_arts:
+        cmd += ["--akiba-json", str(akiba_path)]
+    run(cmd, PY_DIR)
     mp3 = out_dir / f"program_{args.slot}_latest.mp3"
     synth_cmd = [sys.executable, "tools/synthesize_program.py",
                  str(trial_dir / "gadget_program_fixed.txt"),
@@ -277,6 +300,10 @@ def main() -> None:
     log(f"sidecar: {sidecar_path.name}")
 
     state["next_index"] = (idx + 3) % len(pool)
+    if akiba_arts:  # 使った記事は次回から選ばない (直近200件だけ保持)
+        used_list = list(state.get("akiba_used", []))
+        used_list += [a["link"] for a in akiba_arts]
+        state["akiba_used"] = used_list[-200:]
     state["last_slot"] = args.slot
     state["last_run"] = datetime.now().isoformat(timespec="seconds")
     state_file.parent.mkdir(parents=True, exist_ok=True)
