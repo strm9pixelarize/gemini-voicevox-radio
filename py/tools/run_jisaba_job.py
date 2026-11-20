@@ -236,7 +236,9 @@ def main() -> None:
                  str(trial_dir / "jisaba_program_fixed.txt"),
                  "--out", str(mp3),
                  "--title", "自鯖のある生活",
-                 "--artist", "ねるるの日常(健全版)"]
+                 "--artist", "ねるるの日常(健全版)",
+                 # ジングルは本編より少し大きめに聞こえるので 15% 下げる
+                 "--jingle-volume", "0.85"]
     # BGM は assets/neruru_bgm フォルダの曲をローテーションで使う
     # (無ければ声のみ)。曲を増やすときはフォルダにファイルを足すだけ。
     # コンテナでは assets は /data/assets にマウントされる (compose 参照)。

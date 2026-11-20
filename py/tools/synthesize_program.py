@@ -116,7 +116,8 @@ def finalize(wav_bytes: bytes, mp3_path: Path, duration: float,
              loudnorm_on: bool, intro: Path | None = None,
              outro: Path | None = None, pad_sec: float = 2.0,
              title: str | None = None,
-             artist: str | None = None) -> None:
+             artist: str | None = None,
+             jingle_volume: float = 1.0) -> None:
     """最終段: BGM を敷き、ジングルを前後に付け、loudnorm で音量を揃える。"""
     if shutil.which("ffmpeg") is None:
         raise RuntimeError("ffmpeg not found")
@@ -162,10 +163,16 @@ def finalize(wav_bytes: bytes, mp3_path: Path, duration: float,
             if outro is not None:
                 inputs += ["-i", str(outro)]
                 parts.append(len(parts))
-            fc = ";".join(
-                f"[{i}:a]aresample=48000,"
-                f"aformat=channel_layouts=stereo[p{j}]"
-                for j, i in enumerate(parts))
+            # ジングル (先頭と末尾) だけ音量を調整できるようにする。
+            # 本編は jingle_volume の影響を受けない
+            def _seg(j: int, i: int) -> str:
+                is_jingle = ((j == 0 and intro is not None)
+                             or (j == len(parts) - 1 and outro is not None
+                                 and len(parts) > 1))
+                vol = f",volume={jingle_volume:.3f}" if is_jingle else ""
+                return (f"[{i}:a]aresample=48000{vol},"
+                        f"aformat=channel_layouts=stereo[p{j}]")
+            fc = ";".join(_seg(j, i) for j, i in enumerate(parts))
             fc += ";" + "".join(f"[p{j}]" for j in range(len(parts)))
             fc += f"concat=n={len(parts)}:v=0:a=1[out]"
             _ffmpeg(inputs + ["-filter_complex", fc, "-map", "[out]",
@@ -241,6 +248,9 @@ def main() -> None:
                     help="loudnorm をかけない")
     ap.add_argument("--intro", help="本編の前に付けるジングル (任意)")
     ap.add_argument("--outro", help="本編の後に付けるジングル (任意)")
+    ap.add_argument("--jingle-volume", type=float, default=1.0,
+                    help="ジングル (intro/outro) の音量倍率 (既定 1.0、"
+                         "0.85 で15%下げ)")
     ap.add_argument("--pad-sec", type=float, default=2.0,
                     help="頭と末尾に入れる無音の秒数 (既定 2、0 で無効)")
     ap.add_argument("--title", help="ID3 タグの title (番組名、任意)")
@@ -283,7 +293,8 @@ def main() -> None:
         raise SystemExit(f"アウトロファイルがありません: {outro}")
     finalize(wav_bytes, out, duration, bgm, args.bgm_volume_db,
              args.target_lufs, not args.no_loudnorm, intro, outro,
-             args.pad_sec, args.title, args.artist)
+             args.pad_sec, args.title, args.artist,
+             jingle_volume=args.jingle_volume)
     print(f"done: {out} ({out.stat().st_size} bytes, "
           f"audio {duration / 60:.1f} min, synth {time.perf_counter() - t0:.0f}s)")
 
