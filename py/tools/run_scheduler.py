@@ -148,9 +148,7 @@ def main() -> int:
             if key in state["done"]:
                 continue
             script, label = GRID_PROGRAMS[kind]
-            cmd = [sys.executable, script]
-            if kind == "gadget":
-                cmd += ["--slot", slot]
+            cmd = [sys.executable, script, "--slot", slot]
             log(f"grid {slot}: {kind} ({DAY_FILES[now.weekday()]}): "
                 f"{' '.join(cmd)}")
             notify("start", f"▶ 生成開始: {label} {slot}時枠")

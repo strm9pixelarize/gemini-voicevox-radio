@@ -6,7 +6,11 @@ run_scheduler.py から平日の放送10分前に呼ばれ、次の一連を行�
      （新しい順。使い切ったらローテーションをリセットする）
   2. make_blog_talk.py で座談会原稿を生成する
   3. synthesize_program.py で音声化し、output に
-     blog_talk_latest.mp3 を置く（毎回上書き）
+     program_<枠>_latest.mp3 を置く（毎回上書き。ファイル名は
+     番組でなく枠で決まる — 2026-11-20 に統一）
+
+引数:
+  --slot  放送枠 (既定 "12")。出力ファイル名に使う
 
 環境変数:
   BLOG_TALK_OUT_DIR    出力先 (既定 PROGRAM_OUT_DIR、それも無ければ /data/output)
@@ -17,6 +21,7 @@ run_scheduler.py から平日の放送10分前に呼ばれ、次の一連を行�
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -107,6 +112,9 @@ def run(cmd: list[str], cwd: Path) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--slot", default="12")
+    args = parser.parse_args()
     out_dir = Path(os.environ.get(
         "BLOG_TALK_OUT_DIR",
         os.environ.get("PROGRAM_OUT_DIR", "/data/output")))
@@ -153,7 +161,7 @@ def main() -> None:
          "--out-dir", str(trial_dir),
          "--article-json", str(article_path)], PY_DIR)
 
-    mp3 = out_dir / "blog_talk_latest.mp3"
+    mp3 = out_dir / f"program_{args.slot}_latest.mp3"
     run([sys.executable, "tools/synthesize_program.py",
          str(trial_dir / "blog_talk_program.txt"),
          "--out", str(mp3)], PY_DIR)

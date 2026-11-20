@@ -54,6 +54,14 @@
     - YAML 読み込みのため PyYAML をプロジェクト唯一の依存として追加
       (Dockerfile で pip install、schedule/ も bind mount 対象に追加)
 
+12. **長編の出力ファイル名は番組でなく枠で決める**
+    - 出力は program_<枠>_latest.mp3 に統一 (2026-11-20、優の指定)。
+      枠にどの番組が入っても名前が不変なので、AzuraCast 側は
+      枠ごとのプレイリストだけで済む
+    - 当初 blog だけ blog_talk_latest.mp3 という別名で、12時枠の
+      ファイルが2つに割れていたのを解消。run_blog_job.py も
+      run_program_job.py と同じく --slot を受け取る形に揃えた
+
 ## Phase 2 以降で扱うもの
 
 6. **パイプラインの順序がファイル名の数字頼み**
