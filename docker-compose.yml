@@ -39,3 +39,5 @@ services:
       # コードはホストの clone をそのまま使う (イメージ焼き込みより優先される)
       - /DATA/AppData/azuracast_program/py:/app/py:ro
       - /DATA/AppData/azuracast_program/prompts:/app/prompts
+      # 曜日別の番組表。VS Code で編集すれば再起動なしで翌枠から効く
+      - /DATA/AppData/azuracast_program/schedule:/app/schedule:ro

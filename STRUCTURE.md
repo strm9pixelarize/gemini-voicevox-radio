@@ -45,6 +45,15 @@
     - 更新手順: コードは git pull + コンテナ restart、
       compose/Dockerfile の変更時のみ Pull and redeploy
 
+11. **週間編成は曜日別ファイル (schedule/*.yaml) で管理する**
+    - 当初は scheduler 内のジョブ表＋曜日ガードのベタ書きだったが、
+      編成変更のたびにコードを触る形になっていた (優の提案で変更)
+    - ルートに schedule/ を作り mon-thu / fri / sat / sun の4ファイルに
+      「枠 → 番組種別」を書く。scheduler は当日の曜日のファイルを
+      枠の生成時刻に読み直すので、編集は再起動なしで翌枠から効く
+    - YAML 読み込みのため PyYAML をプロジェクト唯一の依存として追加
+      (Dockerfile で pip install、schedule/ も bind mount 対象に追加)
+
 ## Phase 2 以降で扱うもの
 
 6. **パイプラインの順序がファイル名の数字頼み**

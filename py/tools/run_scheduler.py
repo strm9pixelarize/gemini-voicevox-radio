@@ -11,6 +11,8 @@
   VOICEVOX_HOST   make_spot 側が読む (サブプロセスへそのまま継承)
   DISCORD_WEBHOOK_URL 設定されていれば生成の開始・成功・失敗を
                       Discord へ通知する (notify.py、スポットは失敗のみ)
+  SCHEDULE_DIR    曜日別の番組表 (schedule/*.yaml) の置き場所
+                  (既定 リポジトリ直下の schedule/)
 """
 from __future__ import annotations
 
@@ -22,19 +24,50 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import yaml
+
 from notify import notify
 
 PY_DIR = Path(__file__).resolve().parent.parent  # py/
 JOBS = [(10, "traffic"), (40, "weather")]  # (生成する分, 種別) 放送の5分前
-# 長編: (生成する時, 分, 放送枠) 放送の10分前に生成開始
-PROGRAM_JOBS = [(11, 50, "12"), (14, 50, "15"), (17, 50, "18"), (20, 50, "21")]
+# 曜日別グリッドの枠: (生成する時, 分, 放送枠) 放送の10分前に生成開始。
+# どの番組を生成するかは当日の曜日で schedule/*.yaml を引いて決める
+GRID_TIMES = [(11, 50, "12"), (14, 50, "15"), (17, 50, "18"), (20, 50, "21")]
+DAY_FILES = {0: "mon-thu.yaml", 1: "mon-thu.yaml", 2: "mon-thu.yaml",
+             3: "mon-thu.yaml", 4: "fri.yaml", 5: "sat.yaml", 6: "sun.yaml"}
+SCHEDULE_DIR = Path(os.environ.get(
+    "SCHEDULE_DIR",
+    Path(__file__).resolve().parent.parent.parent / "schedule"))
+# グリッドの種別 -> (生成スクリプト, 通知用の番組名)
+GRID_PROGRAMS = {"gadget": ("tools/run_program_job.py", "ガジェットマニア"),
+                 "blog": ("tools/run_blog_job.py", "ブログトーク")}
 # ニュース: 長編の無い時間帯を埋める約10分枠 (放送の10分前に生成開始)
 NEWS_JOBS = [(9, 50, "10"), (10, 50, "11"), (12, 50, "13"), (13, 50, "14"),
              (15, 50, "16"), (16, 50, "17"), (18, 50, "19"), (19, 50, "20"),
              (21, 50, "22")]
-# ブログトーク: 平日 (月〜金) 12時枠 (放送の10分前に生成開始)
-BLOG_JOBS = [(11, 50, "12")]
 KEEP_DONE = 100  # state に残す直近の実行キー数
+
+
+def load_day_slots(now: datetime) -> dict | None:
+    """当日の曜日に対応する番組表 (枠 -> 種別) を読む。
+
+    読めない・形式が違う場合は None を返し、その枠はスキップする
+    (scheduler 自体は止めない)。種別は GRID_PROGRAMS のキーか "none"。
+    """
+    path = SCHEDULE_DIR / DAY_FILES[now.weekday()]
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        slots = data["slots"]
+        result = {}
+        for slot, kind in slots.items():
+            kind = str(kind)
+            if kind != "none" and kind not in GRID_PROGRAMS:
+                raise ValueError(f"unknown program kind: {kind!r}")
+            result[str(slot)] = kind
+        return result
+    except Exception as e:
+        log(f"schedule load FAILED ({path}): {e}")
+        return None
 
 
 def log(msg: str) -> None:
@@ -100,19 +133,27 @@ def main() -> int:
             if run_job(kind, out_dir, assets_dir):
                 state["done"] = (state["done"] + [key])[-KEEP_DONE:]
                 save_state(state_file, state)
-        for hour, minute, slot in PROGRAM_JOBS:
-            if slot == "12" and now.weekday() < 5:
-                # 平日12時枠はブログトーク (BLOG_JOBS) が正。
-                # ガジェットマニアの12時枠は土日だけ生成する
-                continue
+        for hour, minute, slot in GRID_TIMES:
             if (now.hour, now.minute) != (hour, minute):
                 continue
-            key = f"{now:%Y-%m-%d}:program-{slot}"
+            slots = load_day_slots(now)
+            if slots is None:
+                continue
+            kind = slots.get(slot, "none")
+            if kind == "none":
+                log(f"grid {slot}: none "
+                    f"({DAY_FILES[now.weekday()]}), skip")
+                continue
+            key = f"{now:%Y-%m-%d}:grid-{slot}-{kind}"
             if key in state["done"]:
                 continue
-            cmd = [sys.executable, "tools/run_program_job.py", "--slot", slot]
-            log(f"generate program {slot}: {' '.join(cmd)}")
-            notify("start", f"▶ 生成開始: ガジェットマニア {slot}時枠")
+            script, label = GRID_PROGRAMS[kind]
+            cmd = [sys.executable, script]
+            if kind == "gadget":
+                cmd += ["--slot", slot]
+            log(f"grid {slot}: {kind} ({DAY_FILES[now.weekday()]}): "
+                f"{' '.join(cmd)}")
+            notify("start", f"▶ 生成開始: {label} {slot}時枠")
             proc = subprocess.run(cmd, cwd=PY_DIR, capture_output=True,
                                   text=True)
             if proc.stdout:
@@ -120,14 +161,14 @@ def main() -> int:
             if proc.returncode == 0:
                 state["done"] = (state["done"] + [key])[-KEEP_DONE:]
                 save_state(state_file, state)
-                log(f"done program {slot}")
-                notify("success", f"✅ 生成完了: ガジェットマニア {slot}時枠",
+                log(f"done grid {slot} ({kind})")
+                notify("success", f"✅ 生成完了: {label} {slot}時枠",
                        summarize(proc.stdout))
             else:
-                log(f"FAILED program {slot} (rc={proc.returncode})")
+                log(f"FAILED grid {slot} ({kind}, rc={proc.returncode})")
                 if proc.stderr:
                     print(proc.stderr[-2000:], flush=True)
-                notify("error", f"❌ 生成失敗: ガジェットマニア {slot}時枠",
+                notify("error", f"❌ 生成失敗: {label} {slot}時枠",
                        (proc.stderr or "")[-1000:])
         for hour, minute, slot in NEWS_JOBS:
             if (now.hour, now.minute) != (hour, minute):
@@ -153,33 +194,6 @@ def main() -> int:
                 if proc.stderr:
                     print(proc.stderr[-2000:], flush=True)
                 notify("error", f"❌ 生成失敗: ネルラジニュース {slot}時枠",
-                       (proc.stderr or "")[-1000:])
-        for hour, minute, slot in BLOG_JOBS:
-            if now.weekday() >= 5:
-                continue
-            if (now.hour, now.minute) != (hour, minute):
-                continue
-            key = f"{now:%Y-%m-%d}:blog-{slot}"
-            if key in state["done"]:
-                continue
-            cmd = [sys.executable, "tools/run_blog_job.py"]
-            log(f"generate blog-talk {slot}: {' '.join(cmd)}")
-            notify("start", f"▶ 生成開始: ブログトーク {slot}時枠")
-            proc = subprocess.run(cmd, cwd=PY_DIR, capture_output=True,
-                                  text=True)
-            if proc.stdout:
-                print(proc.stdout[-3000:], flush=True)
-            if proc.returncode == 0:
-                state["done"] = (state["done"] + [key])[-KEEP_DONE:]
-                save_state(state_file, state)
-                log(f"done blog-talk {slot}")
-                notify("success", f"✅ 生成完了: ブログトーク {slot}時枠",
-                       summarize(proc.stdout))
-            else:
-                log(f"FAILED blog-talk {slot} (rc={proc.returncode})")
-                if proc.stderr:
-                    print(proc.stderr[-2000:], flush=True)
-                notify("error", f"❌ 生成失敗: ブログトーク {slot}時枠",
                        (proc.stderr or "")[-1000:])
         time.sleep(20)
 

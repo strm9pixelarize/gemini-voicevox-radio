@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Python port of gemini-voicevox-radio (schedule-driven fork)"
 license = { text = "GPL-3.0-or-later" }
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["pyyaml"]  # schedule/*.yaml (曜日別の番組表) の読み込み用
 
 [build-system]
 requires = ["setuptools>=68"]
