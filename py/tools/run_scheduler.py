@@ -101,6 +101,10 @@ def main() -> int:
                 state["done"] = (state["done"] + [key])[-KEEP_DONE:]
                 save_state(state_file, state)
         for hour, minute, slot in PROGRAM_JOBS:
+            if slot == "12" and now.weekday() < 5:
+                # 平日12時枠はブログトーク (BLOG_JOBS) が正。
+                # ガジェットマニアの12時枠は土日だけ生成する
+                continue
             if (now.hour, now.minute) != (hour, minute):
                 continue
             key = f"{now:%Y-%m-%d}:program-{slot}"

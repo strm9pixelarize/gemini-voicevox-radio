@@ -26,6 +26,10 @@ Fallback (added 2026-11-19, after the enoki server outage):
   slightly, 0.25.x vs 0.26.x, which is inaudible in practice).
 - HTTP error responses (non-200) do NOT trigger failover: the engine
   is alive, and switching would only mask a real error.
+- HTTP 5xx responses are retried on the same host (waits in
+  STATUS_RETRY_WAITS): a single transient 500 used to kill a whole
+  159-line synthesis (2026-11-20, gadget 12:00 slot). 4xx is not
+  retried; it would fail again deterministically.
 - Engaging the fallback prints a "VOICEVOX FALLBACK" line so it shows
   up in scheduler logs and in the Discord success/failure summaries.
 """
@@ -34,12 +38,14 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import time
 import urllib.parse
 
 DEFAULT_HOST = "http://localhost:50021"
 CONNECT_TIMEOUT = 10
 SYNTH_TIMEOUT = 120  # synthesis of a long line can take a while
 PROBE_TIMEOUT = 5    # primary reachability check before the first request
+STATUS_RETRY_WAITS = [2, 5, 10]  # waits before HTTP 5xx retries (seconds)
 
 
 def host_from_env() -> str:
@@ -119,20 +125,34 @@ class VoiceVoxClient:
 
     def _request_once(self, method: str, path: str, body: bytes | None,
                       headers: dict) -> bytes:
-        for attempt in range(2):
-            try:
-                conn = self._connection()
-                conn.request(method, path, body=body, headers=headers)
-                resp = conn.getresponse()
-                data = resp.read()
-                if resp.status != 200:
-                    raise RuntimeError(f"VOICEVOX {path} -> HTTP {resp.status}: {data[:200]!r}")
+        status_attempt = 0
+        while True:
+            for attempt in range(2):
+                try:
+                    conn = self._connection()
+                    conn.request(method, path, body=body, headers=headers)
+                    resp = conn.getresponse()
+                    data = resp.read()
+                    break
+                except (http.client.HTTPException, ConnectionError,
+                        OSError):
+                    self.close()
+                    if attempt == 1:
+                        raise
+            if resp.status == 200:
                 return data
-            except (http.client.HTTPException, ConnectionError, OSError):
+            if (500 <= resp.status < 600
+                    and status_attempt < len(STATUS_RETRY_WAITS)):
+                wait = STATUS_RETRY_WAITS[status_attempt]
+                status_attempt += 1
+                print(f"VOICEVOX {path} -> HTTP {resp.status}: "
+                      f"retry {status_attempt}/{len(STATUS_RETRY_WAITS)} "
+                      f"in {wait}s", flush=True)
                 self.close()
-                if attempt == 1:
-                    raise
-        raise RuntimeError("unreachable")
+                time.sleep(wait)
+                continue
+            raise RuntimeError(
+                f"VOICEVOX {path} -> HTTP {resp.status}: {data[:200]!r}")
 
     def close(self) -> None:
         if self._conn is not None:
