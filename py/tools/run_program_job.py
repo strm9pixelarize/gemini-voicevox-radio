@@ -197,7 +197,9 @@ def main() -> None:
     mp3 = out_dir / f"program_{args.slot}_latest.mp3"
     synth_cmd = [sys.executable, "tools/synthesize_program.py",
                  str(trial_dir / "gadget_program_fixed.txt"),
-                 "--out", str(mp3)]
+                 "--out", str(mp3),
+                 "--title", "ガジェットマニア",
+                 "--artist", "ねるるの日常(健全版)"]
     # BGM は assets/neruru_bgm フォルダの曲をローテーションで使う
     # (無ければ声のみ)。曲を増やすときはフォルダにファイルを足すだけ。
     # コンテナでは assets は /data/assets にマウントされる (compose 参照)。

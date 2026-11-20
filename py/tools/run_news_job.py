@@ -94,7 +94,9 @@ def main() -> None:
     mp3 = out_dir / f"news_latest.mp3"
     run([sys.executable, "tools/synthesize_program.py",
          str(trial_dir / "news_program.txt"),
-         "--out", str(mp3)], PY_DIR)
+         "--out", str(mp3),
+         "--title", "ネルラジニュース",
+         "--artist", "ねるるの日常(健全版)"], PY_DIR)
     log(f"done: {mp3}")
 
 

@@ -164,7 +164,9 @@ def main() -> None:
     mp3 = out_dir / f"program_{args.slot}_latest.mp3"
     run([sys.executable, "tools/synthesize_program.py",
          str(trial_dir / "blog_talk_program.txt"),
-         "--out", str(mp3)], PY_DIR)
+         "--out", str(mp3),
+         "--title", "ブログトーク",
+         "--artist", "ねるるの日常(健全版)"], PY_DIR)
 
     if article.get("url"):
         used.append(article["url"])

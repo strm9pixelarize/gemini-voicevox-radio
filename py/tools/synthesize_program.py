@@ -16,6 +16,9 @@
   （連結した全体に loudnorm をかけるので音量の段差は出ない）。
   頭と末尾には --pad-sec 秒（既定 2 秒）の無音を入れる
   （AzuraCast 側のつなぎで頭・尻が切れないようにするため）。
+- --title / --artist を渡すと、最終 MP3 に ID3 タグ (title / artist /
+  date=生成日) を付ける。AzuraCast の Now Playing でファイル名でなく
+  番組名が出るようにするため (2026-11-20)。
 """
 from __future__ import annotations
 
@@ -28,6 +31,7 @@ import subprocess
 import sys
 import time
 import wave
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -110,7 +114,9 @@ def loudnorm_filter(target_i: float, measured: dict | None) -> str:
 def finalize(wav_bytes: bytes, mp3_path: Path, duration: float,
              bgm: Path | None, bgm_db: float, target_i: float,
              loudnorm_on: bool, intro: Path | None = None,
-             outro: Path | None = None, pad_sec: float = 2.0) -> None:
+             outro: Path | None = None, pad_sec: float = 2.0,
+             title: str | None = None,
+             artist: str | None = None) -> None:
     """最終段: BGM を敷き、ジングルを前後に付け、loudnorm で音量を揃える。"""
     if shutil.which("ffmpeg") is None:
         raise RuntimeError("ffmpeg not found")
@@ -186,8 +192,15 @@ def finalize(wav_bytes: bytes, mp3_path: Path, duration: float,
                      str(tmp_pad)])
             src = tmp_pad
             print(f"pad: +{pad_sec:.1f}s head/tail silence")
-        _ffmpeg(["-i", str(src), "-codec:a", "libmp3lame",
-                 "-b:a", "128k", str(mp3_path)])
+        encode = ["-i", str(src), "-codec:a", "libmp3lame", "-b:a", "128k"]
+        if title or artist:
+            if title:
+                encode += ["-metadata", f"title={title}"]
+            if artist:
+                encode += ["-metadata", f"artist={artist}"]
+            encode += ["-metadata", f"date={datetime.now():%Y-%m-%d}"]
+            print(f"tags: title={title} / artist={artist}")
+        _ffmpeg(encode + [str(mp3_path)])
     finally:
         for tmp in (tmp_voice, tmp_mix, tmp_full, tmp_norm, tmp_pad):
             tmp.unlink(missing_ok=True)
@@ -230,6 +243,8 @@ def main() -> None:
     ap.add_argument("--outro", help="本編の後に付けるジングル (任意)")
     ap.add_argument("--pad-sec", type=float, default=2.0,
                     help="頭と末尾に入れる無音の秒数 (既定 2、0 で無効)")
+    ap.add_argument("--title", help="ID3 タグの title (番組名、任意)")
+    ap.add_argument("--artist", help="ID3 タグの artist (任意)")
     args = ap.parse_args()
 
     lines = []
@@ -268,7 +283,7 @@ def main() -> None:
         raise SystemExit(f"アウトロファイルがありません: {outro}")
     finalize(wav_bytes, out, duration, bgm, args.bgm_volume_db,
              args.target_lufs, not args.no_loudnorm, intro, outro,
-             args.pad_sec)
+             args.pad_sec, args.title, args.artist)
     print(f"done: {out} ({out.stat().st_size} bytes, "
           f"audio {duration / 60:.1f} min, synth {time.perf_counter() - t0:.0f}s)")
 
