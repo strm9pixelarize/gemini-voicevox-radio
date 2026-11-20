@@ -13,6 +13,8 @@ Usage:
 
 出力: output/{kind}_latest.mp3 と {kind}_latest.txt (原稿)。
 計測値 (総文字数 / 合成所要秒 / 音声秒数) を標準出力に出す。
+MP3 には ID3 タグ (title=天気情報/交通情報、artist、date=生成日) を
+付ける (2026-11-20、長編・ニュースと同方針)。
 
 ジングル: --jingle-in / --jingle-out で音声ファイル (mp3/wav 等、
 ffmpeg で読める形式) を指定すると、声の前後に付ける。未指定時は
@@ -30,6 +32,7 @@ import subprocess
 import sys
 import time
 import wave
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, "src")
@@ -40,6 +43,9 @@ from radio.voicevox import VoiceVoxClient, host_from_env  # noqa: E402
 GAP_SEC = 0.35  # 行間の無音
 CHARS_PER_SEC = 5.0  # 実測 (2026-11-17): 読み上げ速度の較正用
 VOICE_RATE = 24000  # VOICEVOX の WAV に合わせる
+# ID3 タグ (Now Playing でファイル名でなく種別名を出すため)
+SPOT_TITLES = {"weather": "天気情報", "traffic": "交通情報"}
+SPOT_ARTIST = "ねるるの日常(健全版)"
 
 
 def concat_wavs(wavs: list[bytes], gap_sec: float = GAP_SEC) -> tuple[bytes, float]:
@@ -98,12 +104,17 @@ def load_as_voice_wav(path: Path) -> bytes:
     return proc.stdout
 
 
-def to_mp3(wav_bytes: bytes, mp3_path: Path) -> None:
+def to_mp3(wav_bytes: bytes, mp3_path: Path, title: str | None = None) -> None:
     if shutil.which("ffmpeg") is None:
         raise RuntimeError("ffmpeg not found (WAV のままでは出力できない)")
+    cmd = ["ffmpeg", "-y", "-v", "error", "-i", "pipe:0",
+           "-codec:a", "libmp3lame", "-b:a", "128k"]
+    if title:
+        cmd += ["-metadata", f"title={title}",
+                "-metadata", f"artist={SPOT_ARTIST}",
+                "-metadata", f"date={datetime.now():%Y-%m-%d}"]
     proc = subprocess.run(
-        ["ffmpeg", "-y", "-v", "error", "-i", "pipe:0",
-         "-codec:a", "libmp3lame", "-b:a", "128k", str(mp3_path)],
+        cmd + [str(mp3_path)],
         input=wav_bytes, capture_output=True,
     )
     if proc.returncode != 0:
@@ -189,7 +200,7 @@ def main() -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     mp3_path = out_dir / f"{args.kind}_latest.mp3"
-    to_mp3(wav_bytes, mp3_path)
+    to_mp3(wav_bytes, mp3_path, SPOT_TITLES[args.kind])
     (out_dir / f"{args.kind}_latest.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     summary = {
