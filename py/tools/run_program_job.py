@@ -93,6 +93,64 @@ def fetch_latest_article(blog_url: str) -> dict:
             "content": content}
 
 
+def fetch_friend_article(feed_url: str) -> dict:
+    """友人のブログ (WordPress) の RSS から最新記事を1件取る。
+
+    返す形は fetch_latest_article と同じ {title, date, url, content}。
+    ブログピックアップの後半で、自分の記事の後に読むための素材。
+    """
+    import xml.etree.ElementTree as ET
+    from email.utils import parsedate_to_datetime
+
+    req = urllib.request.Request(feed_url,
+                                 headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        raw = r.read().decode("utf-8", "replace")
+    root = ET.fromstring(raw)
+    item = root.find("./channel/item")
+    if item is None:
+        raise RuntimeError("no item in friend feed")
+
+    class TextExtractor(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.parts: list[str] = []
+            self.skip = 0
+
+        def handle_starttag(self, tag, attrs):
+            if tag in ("script", "style"):
+                self.skip += 1
+
+        def handle_endtag(self, tag):
+            if tag in ("script", "style") and self.skip:
+                self.skip -= 1
+
+        def handle_data(self, data):
+            if not self.skip:
+                self.parts.append(data)
+
+    html = item.findtext(
+        "{http://purl.org/rss/1.0/modules/content/}encoded") or ""
+    if not html:
+        html = item.findtext("description") or ""
+    ex = TextExtractor()
+    ex.feed(html)
+    content = re.sub(r"\s+", " ", " ".join(ex.parts)).strip()
+    if len(content) < 200:
+        raise RuntimeError("friend article body too short")
+    date = ""
+    pub = item.findtext("pubDate")
+    if pub:
+        try:
+            date = parsedate_to_datetime(pub).date().isoformat()
+        except (TypeError, ValueError):
+            date = ""
+    return {"title": (item.findtext("title") or "").strip(),
+            "date": date,
+            "url": (item.findtext("link") or "").strip(),
+            "content": content}
+
+
 def build_word_sheet(topics: list[str], article: dict, out_path: Path,
                      extra_text: str = "") -> None:
     """記事とお題から新出の英字単語を抜き、読みを LLM に付けさせて保存する。"""
@@ -241,8 +299,26 @@ def main() -> None:
         akiba_text = "\n".join(a["title"] + "\n" + a["body"]
                                for a in akiba_arts)
 
+    # 友人ブログの最新記事を取る (ブログピックアップの後半で読む。
+    # 失敗しても番組は作る)
+    friend: dict = {}
+    friend_path = work / "friend.json"
+    friend_feed = os.environ.get(
+        "FRIEND_BLOG_FEED", "https://blog.caramelos.xyz/feed/")
+    try:
+        friend = fetch_friend_article(friend_feed)
+        friend_path.write_text(json.dumps(friend, ensure_ascii=False),
+                               encoding="utf-8")
+        log(f"friend: {friend['title'][:30]}")
+    except Exception as e:
+        friend = {}
+        log(f"friend fetch failed ({e}); skipping friend pickup")
+    extra_text = akiba_text
+    if friend:
+        extra_text += "\n" + friend["title"] + "\n" + friend["content"]
+
     sheet_path = work / "word_sheet.json"
-    build_word_sheet(topics, article, sheet_path, extra_text=akiba_text)
+    build_word_sheet(topics, article, sheet_path, extra_text=extra_text)
 
     trial_dir = work / "trial"
     cmd = [sys.executable, "tools/make_program.py",
@@ -252,6 +328,8 @@ def main() -> None:
            "--extra-dict", str(sheet_path)]
     if akiba_arts:
         cmd += ["--akiba-json", str(akiba_path)]
+    if friend:
+        cmd += ["--friend-json", str(friend_path)]
     run(cmd, PY_DIR)
     mp3 = out_dir / f"program_{args.slot}_latest.mp3"
     synth_cmd = [sys.executable, "tools/synthesize_program.py",
@@ -312,6 +390,13 @@ def main() -> None:
             {"title": a.get("title", ""), "url": a.get("link", ""),
              "excerpt": make_excerpt(a.get("body", ""))}
             for a in akiba_arts]
+    if friend:  # 友人ブログピックアップも表示用に載せる
+        sidecar["friend_pickup"] = {
+            "blog_name": "エレクトロライフ",
+            "title": friend.get("title", ""),
+            "date": friend.get("date", ""),
+            "url": friend.get("url", ""),
+            "excerpt": make_excerpt(friend.get("content", ""))}
     sidecar_path = out_dir / f"program_{args.slot}_latest.json"
     sidecar_path.write_text(json.dumps(sidecar, ensure_ascii=False,
                                        indent=2), encoding="utf-8")
