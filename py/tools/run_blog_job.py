@@ -35,16 +35,8 @@ from pathlib import Path
 TOOLS = Path(__file__).resolve().parent
 PY_DIR = TOOLS.parent
 
-
-def log(msg: str) -> None:
-    print(f"[{datetime.now().isoformat(timespec='seconds')}] {msg}", flush=True)
-
-
-def load_json(path: Path, default):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return default
+sys.path.insert(0, str(TOOLS))
+from job_common import load_json, log, make_excerpt, probe_duration_sec, run, save_podcast_episode  # noqa: E402
 
 
 def get(url: str) -> str:
@@ -98,47 +90,6 @@ def fetch_article(blog_url: str, path: str) -> dict:
         raise RuntimeError("article body too short")
     return {"title": title, "date": date_m.group(1) if date_m else "",
             "content": content, "url": blog_url.rstrip("/") + path}
-
-
-def run(cmd: list[str], cwd: Path) -> None:
-    log("run: " + " ".join(cmd))
-    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
-    if proc.stdout:
-        print(proc.stdout[-3000:], flush=True)
-    if proc.returncode != 0:
-        if proc.stderr:
-            print(proc.stderr[-2000:], flush=True)
-        raise RuntimeError(f"command failed rc={proc.returncode}: {cmd[1]}")
-
-
-def probe_duration_sec(path: Path) -> float | None:
-    """完成した MP3 の長さ (秒)。ffprobe が無い/失敗したら None。"""
-    try:
-        proc = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "csv=p=0", str(path)], capture_output=True, text=True,
-            timeout=30)
-        return round(float(proc.stdout.strip()), 1)
-    except Exception:
-        return None
-
-
-def make_excerpt(text: str, limit: int = 120) -> str:
-    """記事本文の冒頭を、表示用の抜粋 (1行、limit 字まで) に整える。"""
-    flat = re.sub(r"\s+", " ", text or "").strip()
-    if len(flat) <= limit:
-        return flat
-    return flat[:limit].rstrip() + "…"
-
-
-def save_podcast_episode(mp3: Path, sidecar: dict, description: str) -> None:
-    """ポッドキャスト用の固定名コピーを保存する (失敗しても続行)。"""
-    try:
-        sys.path.insert(0, str(TOOLS))
-        from podcast_copy import save_episode
-        save_episode(mp3, sidecar, description)
-    except Exception as e:
-        log(f"podcast: save failed ({e}); continuing")
 
 
 def main() -> None:
