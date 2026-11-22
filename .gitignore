@@ -10,3 +10,5 @@ state/*_work/
 state/*.json
 
 bench_voicevox.py
+
+__pycache__/
