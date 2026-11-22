@@ -90,7 +90,14 @@ def main() -> None:
     song = Path(args.song)
     if not song.exists():
         raise RuntimeError(f"song not found: {song}")
-    out_dir = Path(os.environ.get("PROGRAM_OUT_DIR", "/data/output"))
+    if os.environ.get("PROGRAM_OUT_DIR"):
+        out_dir = Path(os.environ["PROGRAM_OUT_DIR"])
+    elif Path("/data/output").is_dir():
+        out_dir = Path("/data/output")
+    else:
+        # ホスト上の clone で直接実行された場合 (コンテナ外) は
+        # リポジトリ直下の output/ に出す
+        out_dir = PY_DIR.parent / "output"
     out = Path(args.out) if args.out else out_dir / "powerplay_latest.mp3"
     out.parent.mkdir(parents=True, exist_ok=True)
 
