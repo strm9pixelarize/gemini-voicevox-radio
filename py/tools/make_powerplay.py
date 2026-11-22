@@ -4,8 +4,9 @@
 毎時30分のパワープレイ枠で流す曲を、専用のイントロ/アウトロで挟んで
 「パワープレイだ」と分かる形にする。処理は synthesize_program.finalize
 を再利用し、番組と同じ流儀に揃える:
-  イントロ → 曲 → アウトロ を連結 → loudnorm で -16 LUFS に統一 →
-  頭と末尾に2秒の無音。ID3 の title は「<曲名> (パワープレイ)」、
+  イントロ → (1秒の間) → 曲 → (1秒の間) → アウトロ を連結 →
+  loudnorm で -16 LUFS に統一 → 頭と末尾に2秒の無音。
+  ID3 の title は「<曲名> (パワープレイ)」、
   artist は元の曲のものを引き継ぐ。
 
 使い方:
@@ -85,6 +86,8 @@ def main() -> None:
                     help="出力 MP3 (既定 <PROGRAM_OUT_DIR>/powerplay_latest.mp3)")
     ap.add_argument("--intro", help="イントロの上書き (任意)")
     ap.add_argument("--outro", help="アウトロの上書き (任意)")
+    ap.add_argument("--gap-sec", type=float, default=1.0,
+                    help="ジングルと曲の間に入れる無音 (秒、既定 1)")
     args = ap.parse_args()
 
     song = Path(args.song)
@@ -113,12 +116,19 @@ def main() -> None:
     title = f"{song_title} (パワープレイ)"
     artist = tags.get("artist") or "ねるるの日常(健全版)"
 
-    # finalize は WAV バイト列を受けるので、曲を WAV にデコードして渡す
+    # finalize は WAV バイト列を受けるので、曲を WAV にデコードして渡す。
+    # このとき曲の前後に gap 分の無音を足しておくと、連結後に
+    # 「イントロ → 間 → 曲 → 間 → アウトロ」の並びになる
     tmp_wav = out.with_name(out.stem + ".song.wav")
     try:
-        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(song),
-                        "-ar", "48000", "-ac", "2", str(tmp_wav)],
-                       check=True)
+        cmd = ["ffmpeg", "-y", "-v", "error", "-i", str(song)]
+        if args.gap_sec > 0:
+            gap_ms = int(round(args.gap_sec * 1000))
+            cmd += ["-af",
+                    f"adelay={gap_ms}|{gap_ms},apad=pad_dur={args.gap_sec}"]
+            print(f"gap: ジングルと曲の間に {args.gap_sec:.1f}s の無音")
+        cmd += ["-ar", "48000", "-ac", "2", str(tmp_wav)]
+        subprocess.run(cmd, check=True)
         wav_bytes = tmp_wav.read_bytes()
     finally:
         tmp_wav.unlink(missing_ok=True)
