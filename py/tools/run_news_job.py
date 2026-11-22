@@ -116,11 +116,29 @@ def main() -> None:
     log(f"deep-dives used today: {len(state['used_deep'])}")
 
     mp3 = out_dir / f"news_latest.mp3"
-    run([sys.executable, "tools/synthesize_program.py",
-         str(trial_dir / "news_program.txt"),
-         "--out", str(mp3),
-         "--title", "ネルラジニュース",
-         "--artist", "ねるるの日常(健全版)"], PY_DIR)
+    synth_cmd = [sys.executable, "tools/synthesize_program.py",
+                 str(trial_dir / "news_program.txt"),
+                 "--out", str(mp3),
+                 "--title", "ネルラジニュース",
+                 "--artist", "ねるるの日常(健全版)"]
+    # イントロ/アウトロは番組フォルダ (news/) にあれば付ける
+    # (ガジェットマニア・自鯖と同じ流儀。コンテナでは assets は
+    # /data/assets にマウントされる)
+    bgm_dirs = [PY_DIR.parent / "assets" / "neruru_bgm",
+                Path("/data/assets/neruru_bgm")]
+    if os.environ.get("PROGRAM_BGM_DIR"):
+        bgm_dirs.insert(0, Path(os.environ["PROGRAM_BGM_DIR"]))
+    bgm_base = next((d for d in bgm_dirs if d.is_dir()), None)
+    if bgm_base is not None:
+        intro = bgm_base / "news" / "intro.mp3"
+        if intro.exists():
+            synth_cmd += ["--intro", str(intro)]
+            log("intro: news/intro.mp3")
+        outro = bgm_base / "news" / "outro.mp3"
+        if outro.exists():
+            synth_cmd += ["--outro", str(outro)]
+            log("outro: news/outro.mp3")
+    run(synth_cmd, PY_DIR)
     log(f"done: {mp3}")
 
 
