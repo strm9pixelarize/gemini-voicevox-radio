@@ -17,6 +17,8 @@ run_scheduler.py から放送枠の10分前に呼ばれ、次の一連を行う:
   PROGRAM_TOPICS     お題プール (既定 /data/state/program_topics.json、
                      無ければ tools/program_topics.json から種をコピー)
   BLOG_URL           ブログの URL (既定 https://blog.architectural-n.net)
+  BLOG_USED_FILE     ブログピックアップの使用済みリスト
+                     (既定 /data/state/blog_used.json、番組間で共有)
   ANTHROPIC_API_KEY  make_program が直接 API を叩くために使う
 """
 from __future__ import annotations
@@ -49,18 +51,32 @@ def load_json(path: Path, default):
         return default
 
 
-def fetch_latest_article(blog_url: str) -> dict:
-    """ブログの一覧から最新記事を取り、タイトル・日付・本文を返す。"""
+def fetch_latest_article(blog_url: str,
+                         used: set[str] | None = None) -> tuple[dict, bool]:
+    """ブログの一覧から、未読の最新記事を1本取る (AKIBAピックアップ方式)。
+
+    一覧の並び順 (新しい順) に、used に無い最初の記事を選ぶ。全部使用
+    済みなら最新記事に戻って新しい周回を始める。戻り値は
+    (記事, 周回リセットしたか)。記事の形は {title, date, url, content}。
+    """
     def get(url: str) -> str:
         req = urllib.request.Request(url, headers={"User-Agent": "radio-job"})
         with urllib.request.urlopen(req, timeout=30) as r:
             return r.read().decode("utf-8", "replace")
 
-    index = get(blog_url.rstrip("/") + "/")
-    m = re.search(r'href="(/posts/[^"]+\.html)"', index)
-    if not m:
+    base = blog_url.rstrip("/")
+    index = get(base + "/")
+    links: list[str] = []
+    for m in re.finditer(r'href="(/posts/[^"]+\.html)"', index):
+        if m.group(1) not in links:
+            links.append(m.group(1))
+    if not links:
         raise RuntimeError("article link not found in blog index")
-    page = get(blog_url.rstrip("/") + m.group(1))
+    used = used or set()
+    fresh = [l for l in links if base + l not in used]
+    reset = not fresh
+    pick = fresh[0] if fresh else links[0]
+    page = get(base + pick)
     title_m = re.search(r"<title>([^<]+)</title>", page)
     title = (title_m.group(1).split("|")[0].strip() if title_m else "ブログ記事")
     date_m = re.search(r"(20\d\d-\d\d-\d\d)", page)
@@ -89,8 +105,27 @@ def fetch_latest_article(blog_url: str) -> dict:
     if len(content) < 100:
         raise RuntimeError("article body too short")
     return {"title": title, "date": date_m.group(1) if date_m else "",
-            "url": blog_url.rstrip("/") + m.group(1),
-            "content": content}
+            "url": base + pick,
+            "content": content}, reset
+
+
+def blog_used_path() -> Path:
+    return Path(os.environ.get("BLOG_USED_FILE",
+                               "/data/state/blog_used.json"))
+
+
+def load_blog_used() -> list[str]:
+    """ブログピックアップの使用済み記事 URL (番組間で共有する)。"""
+    data = load_json(blog_used_path(), [])
+    return data if isinstance(data, list) else []
+
+
+def save_blog_used(used: list[str]) -> None:
+    """使用済みリストを保存する (直近200件だけ保持、AKIBA と同じ)。"""
+    path = blog_used_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(used[-200:], ensure_ascii=False),
+                    encoding="utf-8")
 
 
 def build_word_sheet(topics: list[str], article: dict, out_path: Path) -> None:
@@ -217,12 +252,16 @@ def main() -> None:
     log(f"slot {args.slot}: topics={topics}")
 
     blog_url = os.environ.get("BLOG_URL", "https://blog.architectural-n.net")
+    blog_used = load_blog_used()
+    fetched_article = None
+    blog_reset = False
     try:
-        article = fetch_latest_article(blog_url)
-        log(f"article: {article['title']} ({article['date']})")
+        fetched_article, blog_reset = fetch_latest_article(
+            blog_url, set(blog_used))
+        log(f"article: {fetched_article['title']} ({fetched_article['date']})")
     except Exception as e:
         log(f"blog fetch failed ({e}); using fallback article")
-        article = load_json(TOOLS / "fallback_article.json", {})
+    article = fetched_article or load_json(TOOLS / "fallback_article.json", {})
     article_path = work / "article.json"
     article_path.write_text(json.dumps(article, ensure_ascii=False),
                             encoding="utf-8")
@@ -309,6 +348,13 @@ def main() -> None:
     save_podcast_episode(mp3, sidecar, "\n".join(desc_lines))
 
     state["next_index"] = (idx + 3) % len(pool)
+    if fetched_article and fetched_article.get("url"):
+        # 読んだ記事は次回から選ばない (番組間で共有、AKIBA と同じ流儀)
+        if blog_reset:
+            save_blog_used([fetched_article["url"]])
+        else:
+            save_blog_used(blog_used + [fetched_article["url"]])
+        log(f"blog_used: {fetched_article['url']}")
     state["last_slot"] = args.slot
     state["last_run"] = datetime.now().isoformat(timespec="seconds")
     state_file.parent.mkdir(parents=True, exist_ok=True)
