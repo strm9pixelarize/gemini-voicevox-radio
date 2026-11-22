@@ -224,6 +224,16 @@ def make_excerpt(text: str, limit: int = 120) -> str:
     return flat[:limit].rstrip() + "…"
 
 
+def save_podcast_episode(mp3: Path, sidecar: dict, description: str) -> None:
+    """ポッドキャスト用の固定名コピーを保存する (失敗しても続行)。"""
+    try:
+        sys.path.insert(0, str(TOOLS))
+        from podcast_copy import save_episode
+        save_episode(mp3, sidecar, description)
+    except Exception as e:
+        log(f"podcast: save failed ({e}); continuing")
+
+
 def run(cmd: list[str], cwd: Path) -> None:
     log("run: " + " ".join(cmd))
     proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
@@ -401,6 +411,18 @@ def main() -> None:
     sidecar_path.write_text(json.dumps(sidecar, ensure_ascii=False,
                                        indent=2), encoding="utf-8")
     log(f"sidecar: {sidecar_path.name}")
+
+    # ポッドキャスト用に、日付入りの固定名でも保存する
+    desc_lines = ["お題: " + " / ".join(topics)]
+    if article.get("title"):
+        desc_lines.append(f"ブログピックアップ: {article['title']}")
+    if akiba_arts:
+        desc_lines.append("AKIBAピックアップ: "
+                          + " / ".join(a["title"] for a in akiba_arts))
+    if friend:
+        desc_lines.append(
+            f"友人ブログピックアップ: {friend.get('title', '')}")
+    save_podcast_episode(mp3, sidecar, "\n".join(desc_lines))
 
     state["next_index"] = (idx + 3) % len(pool)
     if akiba_arts:  # 使った記事は次回から選ばない (直近200件だけ保持)

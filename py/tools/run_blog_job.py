@@ -131,6 +131,16 @@ def make_excerpt(text: str, limit: int = 120) -> str:
     return flat[:limit].rstrip() + "…"
 
 
+def save_podcast_episode(mp3: Path, sidecar: dict, description: str) -> None:
+    """ポッドキャスト用の固定名コピーを保存する (失敗しても続行)。"""
+    try:
+        sys.path.insert(0, str(TOOLS))
+        from podcast_copy import save_episode
+        save_episode(mp3, sidecar, description)
+    except Exception as e:
+        log(f"podcast: save failed ({e}); continuing")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--slot", default="12")
@@ -209,6 +219,10 @@ def main() -> None:
     sidecar_path.write_text(json.dumps(sidecar, ensure_ascii=False,
                                        indent=2), encoding="utf-8")
     log(f"sidecar: {sidecar_path.name}")
+
+    # ポッドキャスト用に、日付入りの固定名でも保存する
+    save_podcast_episode(mp3, sidecar,
+                         f"特集記事: {article.get('title', '')}")
 
     if article.get("url"):
         used.append(article["url"])

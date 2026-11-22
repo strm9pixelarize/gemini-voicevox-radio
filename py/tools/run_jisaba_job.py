@@ -164,6 +164,16 @@ def make_excerpt(text: str, limit: int = 120) -> str:
     return flat[:limit].rstrip() + "…"
 
 
+def save_podcast_episode(mp3: Path, sidecar: dict, description: str) -> None:
+    """ポッドキャスト用の固定名コピーを保存する (失敗しても続行)。"""
+    try:
+        sys.path.insert(0, str(TOOLS))
+        from podcast_copy import save_episode
+        save_episode(mp3, sidecar, description)
+    except Exception as e:
+        log(f"podcast: save failed ({e}); continuing")
+
+
 def run(cmd: list[str], cwd: Path) -> None:
     log("run: " + " ".join(cmd))
     proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
@@ -291,6 +301,12 @@ def main() -> None:
     sidecar_path.write_text(json.dumps(sidecar, ensure_ascii=False,
                                        indent=2), encoding="utf-8")
     log(f"sidecar: {sidecar_path.name}")
+
+    # ポッドキャスト用に、日付入りの固定名でも保存する
+    desc_lines = ["お題: " + " / ".join(topics)]
+    if article.get("title"):
+        desc_lines.append(f"ブログピックアップ: {article['title']}")
+    save_podcast_episode(mp3, sidecar, "\n".join(desc_lines))
 
     state["next_index"] = (idx + 3) % len(pool)
     state["last_slot"] = args.slot
