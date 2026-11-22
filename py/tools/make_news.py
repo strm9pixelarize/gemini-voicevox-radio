@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT / "py/tools"))
 import gadget_check as gc  # noqa: E402
 import make_program as mp  # noqa: E402
 
-FEEDS = [("NHK", "https://www3.nhk.or.jp/rss/news/cat0.xml", 5),
+FEEDS = [("NHK", "https://www.nhk.or.jp/rss/news/cat0.xml", 5),
          ("ITmedia", "https://rss.itmedia.co.jp/rss/2.0/news_bursts.xml", 8)]
 
 
