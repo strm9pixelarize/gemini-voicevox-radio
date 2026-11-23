@@ -98,7 +98,7 @@ def fetch_friend_article(feed_url: str) -> dict:
     return {"title": (item.findtext("title") or "").strip(),
             "date": date,
             "url": (item.findtext("link") or "").strip(),
-            "content": content}, reset
+            "content": content}
 
 
 def main() -> None:
