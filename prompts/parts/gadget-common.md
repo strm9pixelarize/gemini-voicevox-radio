@@ -485,6 +485,22 @@
 - Rich = リッチ
 - Site = サイト
 - Summary = サマリー
+- TCP = ティーシーピー
+- Ping = ピン
+- EXIF = イグジフ
+- Exchangeable = エクスチェンジャブル
+- Image = イメージ
+- File = ファイル
+- Format = フォーマット
+- Operating = オペレーティング
+- YAML = ヤムル
+- radio = ラジオ
+- Transmission = トランスミッション
+- Control = コントロール
+- MPEG = エムペグ
+- Audio = オーディオ
+- Layer = レイヤー
+- Identifier = アイデンティファイア
 - 辞書にない略語：単語として読む慣用があるものは慣用読み（例：バイオス、ラム、ロム）、それ以外は1文字ずつ英語の読み方（A＝エー、V＝ブイ、M＝エム、Z＝ゼット）
 - 製品の型番の数字は、素材の "readings" の読みに従う
 
