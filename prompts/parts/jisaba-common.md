@@ -441,6 +441,24 @@
 - Quality = クオリティ
 - of = オブ
 - Service = サービス
+- iDRAC = アイディーラック
+- iLO = アイエルオー
+- ECC = イーシーシー
+- cron = クロン
+- ACME = アクメ
+- var = ヴァー
+- log = ログ
+- logrotate = ログローテート
+- CSS = シーエスエス
+- Management = マネジメント
+- Controller = コントローラー
+- Solid = ソリッド
+- State = ステート
+- Drive = ドライブ
+- Hard = ハード
+- Disk = ディスク
+- Error = エラー
+- Correcting = コレクティング
 - 辞書にない略語：単語として読む慣用があるものは慣用読み（例：バイオス、ラム、ロム）、それ以外は1文字ずつ英語の読み方（A＝エー、V＝ブイ、M＝エム、Z＝ゼット）
 - 製品の型番の数字は、素材の "readings" の読みに従う
 
