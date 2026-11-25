@@ -536,6 +536,27 @@
 - IPA = アイピーエー
 - MUJI = ムジ
 - wifi = ワイファイ
+- Mythos = ミトス
+- Siren = サイレン
+- Enterprise = エンタープライズ
+- Install = インストール
+- Team = チーム
+- app = アップ
+- as = アズ
+- After = アフター
+- Light = ライト
+- config = コンフィグ
+- creation = クリエイション
+- json = ジェイソン
+- music = ミュージック
+- BCG = ビーシージー
+- TIDAL = タイダル
+- EC = イーシー
+- Nature = ネイチャー
+- UFJ = ユーエフジェー
+- eXtensible = エックステンシブル
+- Host = ホスト
+- Controller = コントローラー
 - 辞書にない略語：単語として読む慣用があるものは慣用読み（例：バイオス、ラム、ロム）、それ以外は1文字ずつ英語の読み方（A＝エー、V＝ブイ、M＝エム、Z＝ゼット）
 - 製品の型番の数字は、素材の "readings" の読みに従う
 
