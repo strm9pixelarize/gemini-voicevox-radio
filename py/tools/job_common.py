@@ -141,6 +141,22 @@ def save_blog_used(used: list[str]) -> None:
                     encoding="utf-8")
 
 
+def program_artwork(kind: str) -> Path | None:
+    """番組アートワーク (assets/program_artwork/<kind>.jpg|.png)。
+
+    BGM と同じ流儀で、リポジトリ内とコンテナのマウント先
+    (/data/assets) の両方を探す。無ければ None (その回は絵なしで
+    生成する)。
+    """
+    for base in (PY_DIR.parent / "assets" / "program_artwork",
+                 Path("/data/assets/program_artwork")):
+        for ext in (".jpg", ".png"):
+            p = base / f"{kind}{ext}"
+            if p.is_file():
+                return p
+    return None
+
+
 def save_podcast_episode(mp3: Path, sidecar: dict, description: str) -> None:
     """ポッドキャスト用の固定名コピーを保存する (失敗しても続行)。"""
     try:

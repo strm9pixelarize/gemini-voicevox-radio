@@ -36,7 +36,7 @@ TOOLS = Path(__file__).resolve().parent
 PY_DIR = TOOLS.parent
 
 sys.path.insert(0, str(TOOLS))
-from job_common import load_json, log, make_excerpt, probe_duration_sec, run, save_podcast_episode  # noqa: E402
+from job_common import load_json, log, make_excerpt, probe_duration_sec, program_artwork, run, save_podcast_episode  # noqa: E402
 
 
 def get(url: str) -> str:
@@ -143,11 +143,16 @@ def main() -> None:
          "--article-json", str(article_path)], PY_DIR)
 
     mp3 = out_dir / f"program_{args.slot}_latest.mp3"
+    # 番組アートワークがあれば、カバーアートとして埋め込む
+    art = program_artwork("blog")
+    if art is not None:
+        log(f"artwork: {art.name}")
     run([sys.executable, "tools/synthesize_program.py",
          str(trial_dir / "blog_talk_program.txt"),
          "--out", str(mp3),
          "--title", "ブログトーク",
-         "--artist", "ねるるの日常(健全版)"], PY_DIR)
+         "--artist", "ねるるの日常(健全版)"]
+        + (["--artwork", str(art)] if art is not None else []), PY_DIR)
 
     # サイト表示用のサイドカー JSON (cast ページの放送内容セクション用)。
     # 音声化が成功したときだけ書く。お題は無いので、特集記事を

@@ -38,7 +38,7 @@ TOOLS = Path(__file__).resolve().parent
 PY_DIR = TOOLS.parent
 
 sys.path.insert(0, str(TOOLS))
-from job_common import build_word_sheet, fetch_latest_article, load_blog_used, load_json, log, make_excerpt, probe_duration_sec, run, save_blog_used, save_podcast_episode  # noqa: E402
+from job_common import build_word_sheet, fetch_latest_article, load_blog_used, load_json, log, make_excerpt, probe_duration_sec, program_artwork, run, save_blog_used, save_podcast_episode  # noqa: E402
 SLOTS = {"12": ("12時", "こんにちは"), "15": ("15時", "こんにちは"),
          "18": ("18時", "こんばんは"), "21": ("21時", "こんばんは")}
 
@@ -140,6 +140,11 @@ def main() -> None:
         if outro.exists():
             synth_cmd += ["--outro", str(outro)]
             log("outro: jisaba/outro.mp3")
+    # 番組アートワークがあれば、カバーアートとして埋め込む
+    art = program_artwork("jisaba")
+    if art is not None:
+        synth_cmd += ["--artwork", str(art)]
+        log(f"artwork: {art.name}")
     run(synth_cmd, PY_DIR)
 
     # サイト表示用のサイドカー JSON (MP3 と同名で隣に上書き)。

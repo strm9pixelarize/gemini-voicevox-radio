@@ -19,6 +19,9 @@
 - --title / --artist を渡すと、最終 MP3 に ID3 タグ (title / artist /
   date=生成日) を付ける。AzuraCast の Now Playing でファイル名でなく
   番組名が出るようにするため (2026-11-20)。
+- --artwork を渡すと、その画像をカバーアート (APIC) として埋め込む。
+  Now Playing やポッドキャストで番組ごとの絵が出るようにするため
+  (2026-11-26)。
 """
 from __future__ import annotations
 
@@ -117,7 +120,8 @@ def finalize(wav_bytes: bytes, mp3_path: Path, duration: float,
              outro: Path | None = None, pad_sec: float = 2.0,
              title: str | None = None,
              artist: str | None = None,
-             jingle_volume: float = 1.0) -> None:
+             jingle_volume: float = 1.0,
+             artwork: Path | None = None) -> None:
     """最終段: BGM を敷き、ジングルを前後に付け、loudnorm で音量を揃える。"""
     if shutil.which("ffmpeg") is None:
         raise RuntimeError("ffmpeg not found")
@@ -199,7 +203,14 @@ def finalize(wav_bytes: bytes, mp3_path: Path, duration: float,
                      str(tmp_pad)])
             src = tmp_pad
             print(f"pad: +{pad_sec:.1f}s head/tail silence")
-        encode = ["-i", str(src), "-codec:a", "libmp3lame", "-b:a", "128k"]
+        encode = ["-i", str(src)]
+        if artwork is not None:
+            encode += ["-i", str(artwork), "-map", "0:a", "-map", "1:v",
+                       "-codec:v", "copy",
+                       "-metadata:s:v", "title=Album cover",
+                       "-metadata:s:v", "comment=Cover (front)"]
+            print(f"artwork: {artwork.name}")
+        encode += ["-codec:a", "libmp3lame", "-b:a", "128k"]
         if title or artist:
             if title:
                 encode += ["-metadata", f"title={title}"]
@@ -255,6 +266,7 @@ def main() -> None:
                     help="頭と末尾に入れる無音の秒数 (既定 2、0 で無効)")
     ap.add_argument("--title", help="ID3 タグの title (番組名、任意)")
     ap.add_argument("--artist", help="ID3 タグの artist (任意)")
+    ap.add_argument("--artwork", help="カバーアート画像 (任意)")
     args = ap.parse_args()
 
     lines = []
@@ -291,10 +303,13 @@ def main() -> None:
     outro = Path(args.outro) if args.outro else None
     if outro is not None and not outro.exists():
         raise SystemExit(f"アウトロファイルがありません: {outro}")
+    artwork = Path(args.artwork) if args.artwork else None
+    if artwork is not None and not artwork.exists():
+        raise SystemExit(f"アートワークファイルがありません: {artwork}")
     finalize(wav_bytes, out, duration, bgm, args.bgm_volume_db,
              args.target_lufs, not args.no_loudnorm, intro, outro,
              args.pad_sec, args.title, args.artist,
-             jingle_volume=args.jingle_volume)
+             jingle_volume=args.jingle_volume, artwork=artwork)
     print(f"done: {out} ({out.stat().st_size} bytes, "
           f"audio {duration / 60:.1f} min, synth {time.perf_counter() - t0:.0f}s)")
 
