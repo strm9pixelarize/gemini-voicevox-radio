@@ -11,11 +11,13 @@ run_scheduler.py から放送枠の10分前に呼ばれ、次の一連を行う:
      も MP3 の隣に置く (cast.architectural-n.net が読む)
 
 環境変数:
-  PROGRAM_OUT_DIR    出力先 (既定 /data/output)
-  PROGRAM_STATE_FILE 状態ファイル (既定 /data/state/program_state.json)
-  PROGRAM_WORK_DIR   作業ディレクトリ (既定 /data/state/program_work)
-  PROGRAM_TOPICS     お題プール (既定 /data/state/program_topics.json、
-                     無ければ tools/program_topics.json から種をコピー)
+  PROGRAM_OUT_DIR    出力先 (既定 /data/output、番組間で共有)
+  JISABA_STATE_FILE  状態ファイル (既定 /data/state/jisaba_state.json)
+  JISABA_WORK_DIR    作業ディレクトリ (既定 /data/state/jisaba_work)
+  JISABA_TOPICS      お題プール (既定 /data/state/jisaba_topics.json、
+                     無ければ tools/jisaba_topics.json から種をコピー)
+                     ※ガジェットと環境変数を共用するとプールと状態が
+                     混ざるため、必ず JISABA_ 専用名を使うこと
   BLOG_URL           ブログの URL (既定 https://blog.architectural-n.net)
   BLOG_USED_FILE     ブログピックアップの使用済みリスト
                      (既定 /data/state/blog_used.json、番組間で共有)
@@ -52,14 +54,14 @@ def main() -> None:
 
     out_dir = Path(os.environ.get("PROGRAM_OUT_DIR", "/data/output"))
     state_file = Path(os.environ.get(
-        "PROGRAM_STATE_FILE", "/data/state/jisaba_state.json"))
+        "JISABA_STATE_FILE", "/data/state/jisaba_state.json"))
     work = Path(os.environ.get(
-        "PROGRAM_WORK_DIR", "/data/state/jisaba_work")) / args.slot
+        "JISABA_WORK_DIR", "/data/state/jisaba_work")) / args.slot
     work.mkdir(parents=True, exist_ok=True)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     topics_path = Path(os.environ.get(
-        "PROGRAM_TOPICS", "/data/state/jisaba_topics.json"))
+        "JISABA_TOPICS", "/data/state/jisaba_topics.json"))
     if not topics_path.exists():
         seed = load_json(TOOLS / "jisaba_topics.json", [])
         topics_path.parent.mkdir(parents=True, exist_ok=True)
