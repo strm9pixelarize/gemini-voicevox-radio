@@ -20,6 +20,10 @@ run_scheduler.py から放送枠の10分前に呼ばれ、次の一連を行う:
                         無ければ tools/nemurenai_story_topics.json から種をコピー)
                         ※他番組と環境変数を共用するとプールと状態が
                         混ざるため、必ず NEMURENAI_ 専用名を使うこと
+  NEMURENAI_VOICEVOX_HOST 合成先 Engine の上書き
+                        (既定 http://192.168.108.200:50021 = 自前CPU。
+                        プライマリ 0.25.2 は夜語トバリ (id118) の合成で
+                        HTTP 500 を返すため、この番組は自前側に固定する)
   ANTHROPIC_API_KEY     make_nemurenai が直接 API を叩くために使う
 """
 from __future__ import annotations
@@ -138,7 +142,20 @@ def main() -> None:
     if art is not None:
         synth_cmd += ["--artwork", str(art)]
         log(f"artwork: {art.name}")
-    run(synth_cmd, PY_DIR)
+    # 合成先は自前CPU Engine に固定する (プライマリ 0.25.2 は
+    # 夜語トバリの合成が HTTP 500 になるため。2026-11-27 実測)
+    vv_host = os.environ.get("NEMURENAI_VOICEVOX_HOST",
+                             "http://192.168.108.200:50021")
+    prev_host = os.environ.get("VOICEVOX_HOST")
+    os.environ["VOICEVOX_HOST"] = vv_host
+    log(f"voicevox host (nemurenai): {vv_host}")
+    try:
+        run(synth_cmd, PY_DIR)
+    finally:
+        if prev_host is None:
+            os.environ.pop("VOICEVOX_HOST", None)
+        else:
+            os.environ["VOICEVOX_HOST"] = prev_host
 
     # 語りの題名（素材 JSON から。取れなければテーマ名で代用）
     story_title = story_theme
