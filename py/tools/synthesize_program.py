@@ -42,8 +42,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from radio.voicevox import VoiceVoxClient, host_from_env  # noqa: E402
 
 GAP_SEC = 0.35
-CAST = {"めたん": "四国めたん", "つむぎ": "春日部つむぎ", "ずんだもん": "ずんだもん"}
-LINE_RE = re.compile(r"^(めたん|つむぎ|ずんだもん):\s*(.+)$")
+CAST = {"めたん": "四国めたん", "つむぎ": "春日部つむぎ", "ずんだもん": "ずんだもん",
+        "ひまり": "冥鳴ひまり", "はう": "雨晴はう", "トバリ": "夜語トバリ"}
+LINE_RE = re.compile(r"^(めたん|つむぎ|ずんだもん|ひまり|はう|トバリ):\s*(.+)$")
 
 
 def concat_wavs(wavs: list[bytes], gap_sec: float = GAP_SEC):

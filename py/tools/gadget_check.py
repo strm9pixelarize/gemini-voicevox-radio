@@ -161,8 +161,8 @@ import sys
 from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Optional, Tuple
 
-SPEAKERS = ("めたん", "つむぎ", "ずんだもん")
-LABEL_RE = re.compile(r"^(めたん|つむぎ|ずんだもん): (.*)$")
+SPEAKERS = ("めたん", "つむぎ", "ずんだもん", "ひまり", "はう", "トバリ")
+LABEL_RE = re.compile(r"^(めたん|つむぎ|ずんだもん|ひまり|はう|トバリ): (.*)$")
 
 # ---------------------------------------------------------------------------
 # 既定値（--common を指定すると共通部品ファイルの内容で上書きされる）
@@ -190,6 +190,7 @@ SECTION_AFTER_FIXED = {
     "番組名": "OP",
     "お題紹介": "本編",
     "ブログ紹介": "ブログ",
+    "語り紹介": "語り",
     "記事の案内": "ED",
     "提供": "締め",
     "スポンサー紹介": "締め",
@@ -210,6 +211,7 @@ SECTION_LIMITS = {
     "本編": dict(min_chars=4500, min_turns=60, dewa=3, iishitsumon=3, kuse=6, uke=3),  # お題3つ分
     "お題": dict(min_chars=1500, min_turns=20, dewa=1, iishitsumon=1, kuse=2, uke=1),
     "ブログ": dict(min_chars=1500, min_turns=20, dewa=1, iishitsumon=1, kuse=2, uke=1),
+    "語り": dict(min_chars=1200, min_turns=12, dewa=0, iishitsumon=0, kuse=0, uke=0),
     "ED": dict(min_chars=500, min_turns=8, dewa=1, iishitsumon=0, kuse=2, uke=1),
     "冒頭": dict(min_chars=0, min_turns=0, dewa=0, iishitsumon=0, kuse=0, uke=0),
     "締め": dict(min_chars=0, min_turns=0, dewa=0, iishitsumon=0, kuse=0, uke=0),
@@ -1069,6 +1071,9 @@ def check_structure(lines: List[Line], generated: List[Line], report: Report):
                            f"ブログで、ずんだもんが記事の内容を紹介している（「{m.group(0)}」）。記事の紹介はめたん、ずんだもんは意見・用語の説明にする")
 
     # W27・W28 コーナーごとの構成（お題は --topic-starts で分けたときだけ）
+    # つむぎ・ずんだもんが居ない番組（ねるるの眠れない話）では構成が違うので対象外
+    if not any(g.speaker == "つむぎ" for g in generated):
+        return
     secs = [s for s in dict.fromkeys(g.section for g in generated) if s.startswith("お題") and s != "お題" or s == "ブログ"]
     for sec in secs:
         sl = [g for g in generated if g.section == sec]

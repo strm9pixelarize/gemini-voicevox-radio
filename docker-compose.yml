@@ -23,6 +23,11 @@ services:
       PROGRAM_STATE_FILE: /data/state/program_state.json
       PROGRAM_WORK_DIR: /data/state/program_work
       PROGRAM_TOPICS: /data/state/program_topics.json
+      # ねるるの眠れない話（日曜21時）。他番組と共用すると混ざるため専用名
+      NEMURENAI_STATE_FILE: /data/state/nemurenai_state.json
+      NEMURENAI_WORK_DIR: /data/state/nemurenai_work
+      NEMURENAI_TOPICS: /data/state/nemurenai_topics.json
+      NEMURENAI_STORY_TOPICS: /data/state/nemurenai_story_topics.json
       # Anthropic API キー。Portainer の Stack 環境変数で入れること
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       RADIO_MODEL: claude-haiku-5-5
