@@ -977,9 +977,9 @@ def check(raw_lines: List[str], fixed, single_section: Optional[str],
     zunda = [l.text for l in generated if l.speaker == "ずんだもん"]
     noda = sum(1 for t in zunda for s in re.split(r"(?<=[。！？])", t) if "のだ" in s)
     z_sentences = sum(1 for t in zunda for s in re.split(r"(?<=[。！？])", t) if s.strip())
+    # 話者別は番組ごとに顔ぶれが違うので、出てきた話者をそのまま数える
     report.stats["__speakers__"] = {
-        "めたん": turns.get("めたん", 0), "つむぎ": turns.get("つむぎ", 0),
-        "ずんだもん": turns.get("ずんだもん", 0),
+        "turns": dict(turns),
         "noda_rate": round(100 * noda / z_sentences) if z_sentences else 0,
         "ndesu": sum(t.count("んです") for t in zunda)}
 
@@ -1464,8 +1464,10 @@ def print_report(report: Report, path: str):
             print(f"  {sec:　<4} {s['chars']:>5}字 / {s['turns']:>3}発言")
         sp = report.stats.get("__speakers__")
         if sp:
-            print(f"■ 話者別: めたん {sp['めたん']}発言 / つむぎ {sp['つむぎ']}発言 / ずんだもん {sp['ずんだもん']}発言")
-            print(f"■ ずんだもん のだ率: {sp['noda_rate']}% / んです: {sp['ndesu']}回")
+            print("■ 話者別: " + " / ".join(
+                f"{name} {n}発言" for name, n in sp["turns"].items()))
+            if sp["turns"].get("ずんだもん"):
+                print(f"■ ずんだもん のだ率: {sp['noda_rate']}% / んです: {sp['ndesu']}回")
     counts = {lv: sum(1 for f in report.findings if f.level == lv) for lv in ("ERROR", "FIX", "WARN")}
     print(f"■ 結果: ERROR {counts['ERROR']}件 / FIX {counts['FIX']}件 / WARN {counts['WARN']}件")
     for f in report.findings:
