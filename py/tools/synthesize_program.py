@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -42,8 +43,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from radio.voicevox import VoiceVoxClient, host_from_env  # noqa: E402
 
 GAP_SEC = 0.35
-CAST = {"めたん": "四国めたん", "つむぎ": "春日部つむぎ", "ずんだもん": "ずんだもん"}
-LINE_RE = re.compile(r"^(めたん|つむぎ|ずんだもん):\s*(.+)$")
+CAST = {"めたん": "四国めたん", "つむぎ": "春日部つむぎ", "ずんだもん": "ずんだもん",
+        "ひまり": "冥鳴ひまり", "はう": "雨晴はう", "トバリ": "夜語トバリ"}
+LINE_RE = re.compile(r"^(めたん|つむぎ|ずんだもん|ひまり|はう|トバリ):\s*(.+)$")
 
 
 def concat_wavs(wavs: list[bytes], gap_sec: float = GAP_SEC):
@@ -294,6 +296,9 @@ def main() -> None:
                       f"({time.perf_counter() - t0:.0f}s)", flush=True)
     wav_bytes, duration = concat_wavs(wavs, args.gap)
     out = Path(args.out)
+    # 最終MP3は仮名 (.part.mp3) に書き切ってから os.replace で差し替える。
+    # 放送開始と書き込みが重なっても、再生側が書きかけを掴まないため
+    tmp_out = out.with_name(out.stem + ".part.mp3")
     bgm = Path(args.bgm) if args.bgm else None
     if bgm is not None and not bgm.exists():
         raise SystemExit(f"BGM ファイルがありません: {bgm}")
@@ -306,10 +311,11 @@ def main() -> None:
     artwork = Path(args.artwork) if args.artwork else None
     if artwork is not None and not artwork.exists():
         raise SystemExit(f"アートワークファイルがありません: {artwork}")
-    finalize(wav_bytes, out, duration, bgm, args.bgm_volume_db,
+    finalize(wav_bytes, tmp_out, duration, bgm, args.bgm_volume_db,
              args.target_lufs, not args.no_loudnorm, intro, outro,
              args.pad_sec, args.title, args.artist,
              jingle_volume=args.jingle_volume, artwork=artwork)
+    os.replace(tmp_out, out)
     print(f"done: {out} ({out.stat().st_size} bytes, "
           f"audio {duration / 60:.1f} min, synth {time.perf_counter() - t0:.0f}s)")
 
