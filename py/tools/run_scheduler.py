@@ -30,9 +30,13 @@ from notify import notify
 
 PY_DIR = Path(__file__).resolve().parent.parent  # py/
 JOBS = [(10, "traffic"), (40, "weather")]  # (生成する分, 種別) 放送の5分前
-# 曜日別グリッドの枠: (生成する時, 分, 放送枠) 放送の10分前に生成開始。
+# 曜日別グリッドの枠: (生成する時, 分, 放送枠) 放送の40分前に生成開始。
+# :40 開始は天気スポット (:40) と衝突して枠が飛ぶため不可、:45 では
+# 遅い日 (生成16分) の余裕がほぼ無いので :20 に置く (2026-11-28 変更)。
+# 通常8分・遅くても16分程度の生成なら :36 までに終わり、:40 の天気
+# スポットにも掛からない。
 # どの番組を生成するかは当日の曜日で schedule/*.yaml を引いて決める
-GRID_TIMES = [(11, 50, "12"), (14, 50, "15"), (17, 50, "18"), (20, 50, "21")]
+GRID_TIMES = [(11, 20, "12"), (14, 20, "15"), (17, 20, "18"), (20, 20, "21")]
 DAY_FILES = {0: "mon-thu.yaml", 1: "mon-thu.yaml", 2: "mon-thu.yaml",
              3: "mon-thu.yaml", 4: "fri.yaml", 5: "sat.yaml", 6: "sun.yaml"}
 SCHEDULE_DIR = Path(os.environ.get(
@@ -41,8 +45,7 @@ SCHEDULE_DIR = Path(os.environ.get(
 # グリッドの種別 -> (生成スクリプト, 通知用の番組名)
 GRID_PROGRAMS = {"gadget": ("tools/run_program_job.py", "ガジェットマニア"),
                  "blog": ("tools/run_blog_job.py", "ブログトーク"),
-                 "jisaba": ("tools/run_jisaba_job.py", "自鯖のある生活"),
-                 "nemurenai": ("tools/run_nemurenai_job.py", "ねるるの眠れない話")}
+                 "jisaba": ("tools/run_jisaba_job.py", "自鯖のある生活")}
 # ニュース: 長編の無い時間帯を埋める約10分枠 (放送の10分前に生成開始)
 NEWS_JOBS = [(9, 50, "10"), (10, 50, "11"), (12, 50, "13"), (13, 50, "14"),
              (15, 50, "16"), (16, 50, "17"), (18, 50, "19"), (19, 50, "20"),
